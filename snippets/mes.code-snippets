@@ -1,38 +1,4 @@
 {
-	"mes-npc": {
-
-		"scope": "source.eathena",
-		"prefix": [ "mes", "mez" ],
-		"body": [
-			"mes @npcname$; mes \"${1:text}\"; next;",
-			"$0"
-		],
-		"description": "NPC script message template"
-	},
-	"sstr": {
-		"scope": "string.quoted.double.eathena",
-		"prefix": [ "ss" ],
-		"body": [
-			"\"+sstr(\"$TM_SELECTED_TEXT\",\"$TM_SELECTED_TEXT$1\")+\""
-		],
-		"description": "sstr to put inside strings, can also work around selected text"
-	},
-	"lstr": {
-		"scope": "string.quoted.double.eathena",
-		"prefix": [ "lstr" ],
-		"body": [
-			"lstr($TM_SELECTED_TEXT,\"$1\")"
-		],
-		"description": "lstr around selected text"
-	},
-	"F_ItemLink": {
-		"scope": "string.quoted.double.eathena",
-		"prefix": [ "F_ItemLink" ],
-		"body": [
-			"\"+F_ItemLink($TM_SELECTED_TEXT$1)+\"$0"
-		],
-		"description": "\" + F_ItemLink(selected_text) + \""
-	},
 	"ScriptColorTag": {
 		"scope": "string.quoted.double.eathena",
 		"prefix": [ "^" ],

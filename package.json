@@ -154,26 +154,6 @@
 		
 		"keybindings": [
 			{
-				"key": "alt+a",
-				"command": "editor.action.insertSnippet",
-				"args": { "name": "mes-npc" }
-			},
-			{
-				"key": "alt+s",
-				"command": "editor.action.insertSnippet",
-				"args": { "name": "sstr" }
-			},
-			{
-				"key": "alt+d",
-				"command": "editor.action.insertSnippet",
-				"args": { "name": "lstr" }
-			},
-			{
-				"key": "alt+i",
-				"command": "editor.action.insertSnippet",
-				"args": { "name": "F_ItemLink" }
-			},
-			{
 				"key": "alt+o",
 				"command": "editor.action.insertSnippet",
 				"args": { "name": "ScriptColorTag" }

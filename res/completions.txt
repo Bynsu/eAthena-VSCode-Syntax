@@ -1,0 +1,595 @@
+1	script	undefined
+1	warp	undefined
+1	warp2	undefined
+1	shop	undefined
+1	cashshop	undefined
+1	OnPCDieEvent	Executed when PC becomes dead.
+1	OnPCKillEvent	Executed when PC kills another PC. Some skills may not invoke this.
+1	OnNPCKillEvent	undefined
+1	OnPCLoginEvent	Executed when PC logs in
+1	OnPCLogoutEvent	Executed when PC logs out
+1	OnPCLoadMapEvent	Executed when PC loads specified map (only if map 'loadevent' mapflag is specified)
+1	OnPCLoadNPCMapEvent	Executed when PC loads NPC map
+1	OnPCBaseLvUpEvent	Executed on base level up
+1	OnPCJobLvUpEvent	Executed on Job level up
+1	OnTouch_	Executed when PC touches NPC area
+1	OnTouch	Executed when PC touches NPC area but only if NPC is not busy with another PC
+1	OnTouchNPC	When mob comes into OnTouch area
+1	OnInit	When script loads/reloads
+1	OnInstanceInit	(need IIF_INITINSTANCENPC)
+0	mes	s arg1, * arg2	mes(${1:s_arg1}, ${2:*_arg2})$0
+0	next
+0	clear
+0	close
+0	close2
+0	menu	s arg1, l arg2, * arg3	menu(${1:s_arg1}, ${2:l_arg2}, ${3:*_arg3})$0
+0	select	s arg1, * arg2	select(${1:s_arg1}, ${2:*_arg2})$0
+0	prompt	s arg1, * arg2	prompt(${1:s_arg1}, ${2:*_arg2})$0
+0	goto	l arg1	goto(${1:l_arg1})$0
+0	callsub	l arg1, * arg2	callsub(${1:l_arg1}, ${2:*_arg2})$0
+0	callfunc	s arg1, * arg2	callfunc(${1:s_arg1}, ${2:*_arg2})$0
+0	return	? arg1	return(${1:?_arg1})$0
+0	getarg	i arg1, ? arg2	getarg(${1:i_arg1}, ${2:?_arg2})$0
+0	jobchange	i arg1, ? arg2, ? arg3	jobchange(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	jobname	i arg1	jobname(${1:i_arg1})$0
+0	input	r arg1, ? arg2, ? arg3	input(${1:r_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	warp	s arg1, i arg2, i arg3, ? arg4	warp(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	warpchar	s arg1, i arg2, i arg3, ? arg4	warpchar(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	areawarp	s arg1, i arg2, i arg3, i arg4, i arg5, s arg6, i arg7, i arg8, ? arg9, ? arg10	areawarp(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:s_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:?_arg9}, ${10:?_arg10})$0
+0	warpparty	s arg1, i arg2, i arg3, i arg4, ? arg5, ? arg6, ? arg7	warpparty(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	warpguild	s arg1, i arg2, i arg3, i arg4	warpguild(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	setlook	i arg1, i arg2, ? arg3	setlook(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	changelook	i arg1, i arg2, ? arg3	changelook(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	set	r arg1, v arg2, ? arg3	set(${1:r_arg1}, ${2:v_arg2}, ${3:?_arg3})$0
+0	setr	r arg1, v arg2, ? arg3, ? arg4	setr(${1:r_arg1}, ${2:v_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	setarray	r arg1, v arg2, * arg3	setarray(${1:r_arg1}, ${2:v_arg2}, ${3:*_arg3})$0
+0	cleararray	r arg1, v arg2, i arg3	cleararray(${1:r_arg1}, ${2:v_arg2}, ${3:i_arg3})$0
+0	copyarray	r arg1, r arg2, i arg3	copyarray(${1:r_arg1}, ${2:r_arg2}, ${3:i_arg3})$0
+0	getarraysize	r arg1	getarraysize(${1:r_arg1})$0
+0	deletearray	r arg1, ? arg2	deletearray(${1:r_arg1}, ${2:?_arg2})$0
+0	getelementofarray	r arg1, i arg2	getelementofarray(${1:r_arg1}, ${2:i_arg2})$0
+0	inarray	r arg1, v arg2	inarray(${1:r_arg1}, ${2:v_arg2})$0
+0	countinarray	r arg1, r arg2	countinarray(${1:r_arg1}, ${2:r_arg2})$0
+0	getitem	v arg1, i arg2, ? arg3	getitem(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	rentitem	v arg1, i arg2, ? arg3	rentitem(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	rentitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, ? arg10	rentitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:?_arg10})$0
+0	getitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, ? arg10	getitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:?_arg10})$0
+0	getnameditem	v arg1, v arg2	getnameditem(${1:v_arg1}, ${2:v_arg2})$0
+0	groupranditem	i arg1, ? arg2	groupranditem(${1:i_arg1}, ${2:?_arg2})$0
+0	makeitem	v arg1, i arg2, s arg3, i arg4, i arg5	makeitem(${1:v_arg1}, ${2:i_arg2}, ${3:s_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	makeitem2	v arg1, i arg2, s arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, i arg10, i arg11, i arg12	makeitem2(${1:v_arg1}, ${2:i_arg2}, ${3:s_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:i_arg10}, ${11:i_arg11}, ${12:i_arg12})$0
+0	delitem	v arg1, i arg2, ? arg3	delitem(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	storagedelitem	v arg1, i arg2, ? arg3	storagedelitem(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	guildstoragedelitem	v arg1, i arg2, ? arg3	guildstoragedelitem(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	cartdelitem	v arg1, i arg2, ? arg3	cartdelitem(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	delitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, ? arg10	delitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:?_arg10})$0
+0	storagedelitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, ? arg10	storagedelitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:?_arg10})$0
+0	guildstoragedelitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, ? arg10	guildstoragedelitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:?_arg10})$0
+0	cartdelitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, ? arg10	cartdelitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:?_arg10})$0
+0	enable_items
+0	disable_items
+0	cutin	s arg1, i arg2	cutin(${1:s_arg1}, ${2:i_arg2})$0
+0	viewpoint	i arg1, i arg2, i arg3, i arg4, i arg5, ? arg6	viewpoint(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:?_arg6})$0
+0	heal	i arg1, i arg2, ? arg3	heal(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	itemheal	i arg1, i arg2, ? arg3	itemheal(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	percentheal	i arg1, i arg2, ? arg3	percentheal(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	rand	i arg1, ? arg2	rand(${1:i_arg1}, ${2:?_arg2})$0
+0	countitem	v arg1, ? arg2	countitem(${1:v_arg1}, ${2:?_arg2})$0
+0	storagecountitem	v arg1, ? arg2	storagecountitem(${1:v_arg1}, ${2:?_arg2})$0
+0	guildstoragecountitem	v arg1, ? arg2	guildstoragecountitem(${1:v_arg1}, ${2:?_arg2})$0
+0	cartcountitem	v arg1, ? arg2	cartcountitem(${1:v_arg1}, ${2:?_arg2})$0
+0	countitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, ? arg9	countitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:?_arg9})$0
+0	storagecountitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, ? arg9	storagecountitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:?_arg9})$0
+0	guildstoragecountitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, ? arg9	guildstoragecountitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:?_arg9})$0
+0	cartcountitem2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, ? arg9	cartcountitem2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:?_arg9})$0
+0	checkweight	v arg1, i arg2, * arg3	checkweight(${1:v_arg1}, ${2:i_arg2}, ${3:*_arg3})$0
+0	checkweight2	r arg1, r arg2	checkweight2(${1:r_arg1}, ${2:r_arg2})$0
+0	readparam	i arg1, ? arg2	readparam(${1:i_arg1}, ${2:?_arg2})$0
+0	getcharid	i arg1, ? arg2	getcharid(${1:i_arg1}, ${2:?_arg2})$0
+0	getnpcid	i arg1, ? arg2	getnpcid(${1:i_arg1}, ${2:?_arg2})$0
+0	getpartyname	i arg1	getpartyname(${1:i_arg1})$0
+0	getpartymember	i arg1, ? arg2, ? arg3	getpartymember(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	getpartyleader	i arg1, ? arg2	getpartyleader(${1:i_arg1}, ${2:?_arg2})$0
+0	getguildname	i arg1	getguildname(${1:i_arg1})$0
+0	getguildmaster	i arg1	getguildmaster(${1:i_arg1})$0
+0	getguildmasterid	i arg1	getguildmasterid(${1:i_arg1})$0
+0	strcharinfo	i arg1, ? arg2	strcharinfo(${1:i_arg1}, ${2:?_arg2})$0
+0	strnpcinfo	i arg1	strnpcinfo(${1:i_arg1})$0
+0	getequipid	? arg1, ? arg2	getequipid(${1:?_arg1}, ${2:?_arg2})$0
+0	getequipuniqueid	i arg1, ? arg2	getequipuniqueid(${1:i_arg1}, ${2:?_arg2})$0
+0	getequipname	i arg1, ? arg2	getequipname(${1:i_arg1}, ${2:?_arg2})$0
+0	getbrokenid	i arg1, ? arg2	getbrokenid(${1:i_arg1}, ${2:?_arg2})$0
+0	repair	i arg1, ? arg2	repair(${1:i_arg1}, ${2:?_arg2})$0
+0	repairall	? arg1	repairall(${1:?_arg1})$0
+0	getequipisequiped	i arg1, ? arg2	getequipisequiped(${1:i_arg1}, ${2:?_arg2})$0
+0	getequipisenableref	i arg1, ? arg2	getequipisenableref(${1:i_arg1}, ${2:?_arg2})$0
+0	getequiprefinerycnt	i arg1, ? arg2	getequiprefinerycnt(${1:i_arg1}, ${2:?_arg2})$0
+0	getequipweaponlv	i arg1, ? arg2	getequipweaponlv(${1:i_arg1}, ${2:?_arg2})$0
+0	getequippercentrefinery	i arg1, ? arg2	getequippercentrefinery(${1:i_arg1}, ${2:?_arg2})$0
+0	successrefitem	i arg1, ? arg2, ? arg3	successrefitem(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	failedrefitem	i arg1, ? arg2	failedrefitem(${1:i_arg1}, ${2:?_arg2})$0
+0	downrefitem	i arg1, ? arg2, ? arg3	downrefitem(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	statusup	i arg1, ? arg2	statusup(${1:i_arg1}, ${2:?_arg2})$0
+0	statusup2	i arg1, i arg2, ? arg3	statusup2(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	bonus	i arg1, ? arg2	bonus(${1:i_arg1}, ${2:?_arg2})$0
+0	bonus2	i arg1, v arg2, i arg3	bonus2(${1:i_arg1}, ${2:v_arg2}, ${3:i_arg3})$0
+0	bonus3	i arg1, v arg2, i arg3, i arg4	bonus3(${1:i_arg1}, ${2:v_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	bonus4	i arg1, v arg2, v arg3, i arg4, i arg5	bonus4(${1:i_arg1}, ${2:v_arg2}, ${3:v_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	bonus5	i arg1, v arg2, v arg3, i arg4, i arg5, i arg6	bonus5(${1:i_arg1}, ${2:v_arg2}, ${3:v_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6})$0
+0	autobonus	s arg1, i arg2, i arg3, ? arg4, ? arg5	autobonus(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	autobonus2	s arg1, i arg2, i arg3, ? arg4, ? arg5	autobonus2(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	autobonus3	s arg1, i arg2, i arg3, v arg4, ? arg5	autobonus3(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:v_arg4}, ${5:?_arg5})$0
+0	skill	v arg1, i arg2, ? arg3	skill(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	addtoskill	v arg1, i arg2, ? arg3	addtoskill(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	guildskill	v arg1, i arg2	guildskill(${1:v_arg1}, ${2:i_arg2})$0
+0	getskilllv	v arg1	getskilllv(${1:v_arg1})$0
+0	getgdskilllv	i arg1, v arg2	getgdskilllv(${1:i_arg1}, ${2:v_arg2})$0
+0	basicskillcheck
+0	getgmlevel	? arg1	getgmlevel(${1:?_arg1})$0
+0	getgroupid	? arg1	getgroupid(${1:?_arg1})$0
+0	end
+0	checkoption	i arg1, ? arg2	checkoption(${1:i_arg1}, ${2:?_arg2})$0
+0	setoption	i arg1, ? arg2, ? arg3	setoption(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	setcart	? arg1, ? arg2	setcart(${1:?_arg1}, ${2:?_arg2})$0
+0	checkcart	? arg1	checkcart(${1:?_arg1})$0
+0	setfalcon	? arg1, ? arg2	setfalcon(${1:?_arg1}, ${2:?_arg2})$0
+0	checkfalcon	? arg1	checkfalcon(${1:?_arg1})$0
+0	setriding	? arg1, ? arg2	setriding(${1:?_arg1}, ${2:?_arg2})$0
+0	checkriding	? arg1	checkriding(${1:?_arg1})$0
+0	checkwug	? arg1	checkwug(${1:?_arg1})$0
+0	checkmadogear	? arg1	checkmadogear(${1:?_arg1})$0
+0	setmadogear	? arg1, ? arg2	setmadogear(${1:?_arg1}, ${2:?_arg2})$0
+0	save	s arg1, i arg2, i arg3, ? arg4, ? arg5, ? arg6	save(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	savepoint	s arg1, i arg2, i arg3, ? arg4, ? arg5, ? arg6	savepoint(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	gettimetick	i arg1	gettimetick(${1:i_arg1})$0
+0	gettime	i arg1	gettime(${1:i_arg1})$0
+0	gettimestr	s arg1, i arg2, ? arg3	gettimestr(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	openstorage
+0	guildopenstorage
+0	guildopenstorage_log	? arg1	guildopenstorage_log(${1:?_arg1})$0
+0	guild_has_permission	i arg1, ? arg2	guild_has_permission(${1:i_arg1}, ${2:?_arg2})$0
+0	itemskill	v arg1, i arg2, ? arg3	itemskill(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	produce	i arg1	produce(${1:i_arg1})$0
+0	cooking	i arg1	cooking(${1:i_arg1})$0
+0	monster	s arg1, i arg2, i arg3, s arg4, i arg5, i arg6, ? arg7, ? arg8, ? arg9	monster(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:s_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:?_arg7}, ${8:?_arg8}, ${9:?_arg9})$0
+0	getmobdrops	i arg1	getmobdrops(${1:i_arg1})$0
+0	areamonster	s arg1, i arg2, i arg3, i arg4, i arg5, s arg6, i arg7, i arg8, ? arg9, ? arg10, ? arg11	areamonster(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:s_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:?_arg9}, ${10:?_arg10}, ${11:?_arg11})$0
+0	killmonster	s arg1, s arg2, ? arg3	killmonster(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	killmonsterall	s arg1, ? arg2	killmonsterall(${1:s_arg1}, ${2:?_arg2})$0
+0	clone	s arg1, i arg2, i arg3, s arg4, i arg5, ? arg6, ? arg7, ? arg8, ? arg9	clone(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:s_arg4}, ${5:i_arg5}, ${6:?_arg6}, ${7:?_arg7}, ${8:?_arg8}, ${9:?_arg9})$0
+0	doevent	s arg1	doevent(${1:s_arg1})$0
+0	donpcevent	s arg1	donpcevent(${1:s_arg1})$0
+0	cmdothernpc	s arg1, s arg2	cmdothernpc(${1:s_arg1}, ${2:s_arg2})$0
+0	addtimer	i arg1, s arg2	addtimer(${1:i_arg1}, ${2:s_arg2})$0
+0	deltimer	s arg1	deltimer(${1:s_arg1})$0
+0	addtimercount	i arg1, s arg2	addtimercount(${1:i_arg1}, ${2:s_arg2})$0
+0	initnpctimer	? arg1, ? arg2	initnpctimer(${1:?_arg1}, ${2:?_arg2})$0
+0	stopnpctimer	? arg1, ? arg2	stopnpctimer(${1:?_arg1}, ${2:?_arg2})$0
+0	startnpctimer	? arg1, ? arg2	startnpctimer(${1:?_arg1}, ${2:?_arg2})$0
+0	setnpctimer	i arg1, ? arg2	setnpctimer(${1:i_arg1}, ${2:?_arg2})$0
+0	getnpctimer	i arg1, ? arg2	getnpctimer(${1:i_arg1}, ${2:?_arg2})$0
+0	attachnpctimer	? arg1	attachnpctimer(${1:?_arg1})$0
+0	detachnpctimer	? arg1	detachnpctimer(${1:?_arg1})$0
+0	playerattached
+0	announce	s arg1, i arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7	announce(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	mapannounce	s arg1, s arg2, i arg3, ? arg4, ? arg5, ? arg6, ? arg7, ? arg8	mapannounce(${1:s_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7}, ${8:?_arg8})$0
+0	areaannounce	s arg1, i arg2, i arg3, i arg4, i arg5, s arg6, i arg7, ? arg8, ? arg9, ? arg10, ? arg11, ? arg12	areaannounce(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:s_arg6}, ${7:i_arg7}, ${8:?_arg8}, ${9:?_arg9}, ${10:?_arg10}, ${11:?_arg11}, ${12:?_arg12})$0
+0	getusers	i arg1	getusers(${1:i_arg1})$0
+0	getmapguildusers	s arg1, i arg2	getmapguildusers(${1:s_arg1}, ${2:i_arg2})$0
+0	getmapusers	s arg1	getmapusers(${1:s_arg1})$0
+0	getareausers	s arg1, i arg2, i arg3, i arg4, i arg5	getareausers(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	getunits	i arg1, ? arg2	getunits(${1:i_arg1}, ${2:?_arg2})$0
+0	getmapunits	i arg1, s arg2, ? arg3	getmapunits(${1:i_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	getareaunits	i arg1, s arg2, i arg3, i arg4, i arg5, i arg6, ? arg7	getareaunits(${1:i_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:?_arg7})$0
+0	getareadropitem	s arg1, i arg2, i arg3, i arg4, i arg5, v arg6	getareadropitem(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:v_arg6})$0
+0	enablenpc	s arg1	enablenpc(${1:s_arg1})$0
+0	disablenpc	s arg1	disablenpc(${1:s_arg1})$0
+0	hideoffnpc	s arg1	hideoffnpc(${1:s_arg1})$0
+0	hideonnpc	s arg1	hideonnpc(${1:s_arg1})$0
+0	sc_start	i arg1, i arg2, i arg3, ? arg4, ? arg5, ? arg6	sc_start(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	sc_start2	i arg1, i arg2, i arg3, i arg4, ? arg5, ? arg6, ? arg7	sc_start2(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	sc_start4	i arg1, i arg2, i arg3, i arg4, i arg5, i arg6, ? arg7, ? arg8, ? arg9	sc_start4(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:?_arg7}, ${8:?_arg8}, ${9:?_arg9})$0
+0	sc_end	i arg1, ? arg2	sc_end(${1:i_arg1}, ${2:?_arg2})$0
+0	sc_end_class	? arg1, ? arg2	sc_end_class(${1:?_arg1}, ${2:?_arg2})$0
+0	getstatus	i arg1, ? arg2, ? arg3	getstatus(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	getscrate	i arg1, i arg2, ? arg3	getscrate(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	debugmes	s arg1	debugmes(${1:s_arg1})$0
+0	pet	i arg1	pet(${1:i_arg1})$0
+0	bpet
+0	catchpet	i arg1	catchpet(${1:i_arg1})$0
+0	birthpet
+0	resetlvl	i arg1, ? arg2	resetlvl(${1:i_arg1}, ${2:?_arg2})$0
+0	resetstatus	? arg1	resetstatus(${1:?_arg1})$0
+0	resetskill	? arg1	resetskill(${1:?_arg1})$0
+0	skillpointcount	? arg1	skillpointcount(${1:?_arg1})$0
+0	changebase	i arg1, ? arg2	changebase(${1:i_arg1}, ${2:?_arg2})$0
+0	changesex	? arg1	changesex(${1:?_arg1})$0
+0	changecharsex	? arg1	changecharsex(${1:?_arg1})$0
+0	waitingroom	s arg1, i arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7	waitingroom(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	delwaitingroom	? arg1	delwaitingroom(${1:?_arg1})$0
+0	waitingroomkick	s arg1, s arg2	waitingroomkick(${1:s_arg1}, ${2:s_arg2})$0
+0	getwaitingroomusers	? arg1	getwaitingroomusers(${1:?_arg1})$0
+0	kickwaitingroomall	? arg1	kickwaitingroomall(${1:?_arg1})$0
+0	enablewaitingroomevent	? arg1	enablewaitingroomevent(${1:?_arg1})$0
+0	disablewaitingroomevent	? arg1	disablewaitingroomevent(${1:?_arg1})$0
+0	enablearena
+0	disablearena
+0	getwaitingroomstate	i arg1, ? arg2	getwaitingroomstate(${1:i_arg1}, ${2:?_arg2})$0
+0	warpwaitingpc	s arg1, i arg2, i arg3, ? arg4	warpwaitingpc(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	attachrid	i arg1, ? arg2	attachrid(${1:i_arg1}, ${2:?_arg2})$0
+0	addrid	i arg1, ? arg2, ? arg3, ? arg4, ? arg5, ? arg6	addrid(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	detachrid
+0	isloggedin	i arg1, ? arg2	isloggedin(${1:i_arg1}, ${2:?_arg2})$0
+0	setmapflagnosave	s arg1, s arg2, i arg3, i arg4	setmapflagnosave(${1:s_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	getmapflag	s arg1, i arg2, ? arg3	getmapflag(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	setmapflag	s arg1, i arg2, ? arg3, ? arg4	setmapflag(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	removemapflag	s arg1, i arg2, ? arg3	removemapflag(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	pvpon	s arg1	pvpon(${1:s_arg1})$0
+0	pvpoff	s arg1	pvpoff(${1:s_arg1})$0
+0	gvgon	s arg1	gvgon(${1:s_arg1})$0
+0	gvgoff	s arg1	gvgoff(${1:s_arg1})$0
+0	emotion	i arg1, ? arg2	emotion(${1:i_arg1}, ${2:?_arg2})$0
+0	maprespawnguildid	s arg1, i arg2, i arg3	maprespawnguildid(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	agitstart
+0	agitend
+0	agitcheck
+0	flagemblem	i arg1	flagemblem(${1:i_arg1})$0
+0	getcastlename	s arg1	getcastlename(${1:s_arg1})$0
+0	getcastledata	s arg1, i arg2	getcastledata(${1:s_arg1}, ${2:i_arg2})$0
+0	setcastledata	s arg1, i arg2, i arg3	setcastledata(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	requestguildinfo	i arg1, ? arg2	requestguildinfo(${1:i_arg1}, ${2:?_arg2})$0
+0	getequipcardcnt	i arg1	getequipcardcnt(${1:i_arg1})$0
+0	successremovecards	i arg1	successremovecards(${1:i_arg1})$0
+0	failedremovecards	i arg1, i arg2	failedremovecards(${1:i_arg1}, ${2:i_arg2})$0
+0	marriage	s arg1	marriage(${1:s_arg1})$0
+0	wedding
+0	divorce	? arg1	divorce(${1:?_arg1})$0
+0	ispartneron	? arg1	ispartneron(${1:?_arg1})$0
+0	getpartnerid	? arg1	getpartnerid(${1:?_arg1})$0
+0	getchildid	? arg1	getchildid(${1:?_arg1})$0
+0	getmotherid	? arg1	getmotherid(${1:?_arg1})$0
+0	getfatherid	? arg1	getfatherid(${1:?_arg1})$0
+0	warppartner	s arg1, i arg2, i arg3	warppartner(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	getitemname	v arg1	getitemname(${1:v_arg1})$0
+0	getitemslots	i arg1	getitemslots(${1:i_arg1})$0
+0	makepet	i arg1	makepet(${1:i_arg1})$0
+0	getexp	i arg1, i arg2, ? arg3	getexp(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	getinventorylist	? arg1	getinventorylist(${1:?_arg1})$0
+0	getskilllist	? arg1	getskilllist(${1:?_arg1})$0
+0	clearitem	? arg1	clearitem(${1:?_arg1})$0
+0	classchange	i arg1, ? arg2, ? arg3	classchange(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	misceffect	i arg1	misceffect(${1:i_arg1})$0
+0	playBGM	s arg1	playBGM(${1:s_arg1})$0
+0	playBGMall	s arg1, ? arg2, ? arg3, ? arg4, ? arg5, ? arg6	playBGMall(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	soundeffect	s arg1, i arg2	soundeffect(${1:s_arg1}, ${2:i_arg2})$0
+0	soundeffectall	s arg1, i arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7	soundeffectall(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	strmobinfo	i arg1, i arg2	strmobinfo(${1:i_arg1}, ${2:i_arg2})$0
+0	guardian	s arg1, i arg2, i arg3, s arg4, i arg5, ? arg6, ? arg7	guardian(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:s_arg4}, ${5:i_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	guardianinfo	s arg1, i arg2, i arg3	guardianinfo(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	petskillbonus	i arg1, i arg2, i arg3, i arg4	petskillbonus(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	petrecovery	i arg1, i arg2	petrecovery(${1:i_arg1}, ${2:i_arg2})$0
+0	petloot	i arg1	petloot(${1:i_arg1})$0
+0	petskillattack	v arg1, i arg2, i arg3, i arg4	petskillattack(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	petskillattack2	v arg1, i arg2, i arg3, i arg4, i arg5	petskillattack2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	petskillsupport	v arg1, i arg2, i arg3, i arg4, i arg5	petskillsupport(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	skilleffect	v arg1, i arg2	skilleffect(${1:v_arg1}, ${2:i_arg2})$0
+0	npcskilleffect	v arg1, i arg2, i arg3, i arg4	npcskilleffect(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	specialeffect	i arg1, ? arg2, ? arg3	specialeffect(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	specialeffect2	i arg1, ? arg2, ? arg3	specialeffect2(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	nude	? arg1	nude(${1:?_arg1})$0
+0	mapwarp	s arg1, s arg2, i arg3, i arg4, ? arg5, ? arg6	mapwarp(${1:s_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	atcommand	s arg1	atcommand(${1:s_arg1})$0
+0	charcommand	s arg1	charcommand(${1:s_arg1})$0
+0	movenpc	s arg1, i arg2, i arg3, ? arg4	movenpc(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	message	s arg1, s arg2	message(${1:s_arg1}, ${2:s_arg2})$0
+0	npctalk	s arg1, ? arg2, ? arg3	npctalk(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	chatmes	s arg1, ? arg2	chatmes(${1:s_arg1}, ${2:?_arg2})$0
+0	mobcount	s arg1, s arg2	mobcount(${1:s_arg1}, ${2:s_arg2})$0
+0	getlook	i arg1, ? arg2	getlook(${1:i_arg1}, ${2:?_arg2})$0
+0	getsavepoint	i arg1, ? arg2	getsavepoint(${1:i_arg1}, ${2:?_arg2})$0
+0	npcspeed	i arg1	npcspeed(${1:i_arg1})$0
+0	npcwalkto	i arg1, i arg2	npcwalkto(${1:i_arg1}, ${2:i_arg2})$0
+0	npcstop
+0	getmapxy	r arg1, r arg2, r arg3, ? arg4, ? arg5	getmapxy(${1:r_arg1}, ${2:r_arg2}, ${3:r_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	mapid2name	i arg1	mapid2name(${1:i_arg1})$0
+0	checkoption1	i arg1, ? arg2	checkoption1(${1:i_arg1}, ${2:?_arg2})$0
+0	checkoption2	i arg1, ? arg2	checkoption2(${1:i_arg1}, ${2:?_arg2})$0
+0	guildgetexp	i arg1	guildgetexp(${1:i_arg1})$0
+0	guildchangegm	i arg1, s arg2	guildchangegm(${1:i_arg1}, ${2:s_arg2})$0
+0	logmes	s arg1	logmes(${1:s_arg1})$0
+0	summon	s arg1, i arg2, ? arg3, ? arg4	summon(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	isnight
+0	isday
+0	isequipped	i arg1, * arg2	isequipped(${1:i_arg1}, ${2:*_arg2})$0
+0	isequippedcnt	i arg1, * arg2	isequippedcnt(${1:i_arg1}, ${2:*_arg2})$0
+0	cardscnt	i arg1, * arg2	cardscnt(${1:i_arg1}, ${2:*_arg2})$0
+0	getrefine
+0	night
+0	day
+0	defpattern	i arg1, s arg2, s arg3	defpattern(${1:i_arg1}, ${2:s_arg2}, ${3:s_arg3})$0
+0	activatepset	i arg1	activatepset(${1:i_arg1})$0
+0	deactivatepset	i arg1	deactivatepset(${1:i_arg1})$0
+0	deletepset	i arg1	deletepset(${1:i_arg1})$0
+0	preg_match	s arg1, s arg2, ? arg3	preg_match(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	dispbottom	s arg1, ? arg2, ? arg3	dispbottom(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	recovery	i arg1, ? arg2, ? arg3, ? arg4	recovery(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	getpetinfo	i arg1, ? arg2	getpetinfo(${1:i_arg1}, ${2:?_arg2})$0
+0	gethominfo	i arg1, ? arg2	gethominfo(${1:i_arg1}, ${2:?_arg2})$0
+0	getmercinfo	i arg1, ? arg2	getmercinfo(${1:i_arg1}, ${2:?_arg2})$0
+0	checkequipedcard	i arg1	checkequipedcard(${1:i_arg1})$0
+0	jump_zero	i arg1, l arg2	jump_zero(${1:i_arg1}, ${2:l_arg2})$0
+0	globalmes	s arg1, ? arg2	globalmes(${1:s_arg1}, ${2:?_arg2})$0
+0	unequip	i arg1, ? arg2	unequip(${1:i_arg1}, ${2:?_arg2})$0
+0	getstrlen	s arg1	getstrlen(${1:s_arg1})$0
+0	charisalpha	s arg1, i arg2	charisalpha(${1:s_arg1}, ${2:i_arg2})$0
+0	charat	s arg1, i arg2	charat(${1:s_arg1}, ${2:i_arg2})$0
+0	setchar	s arg1, s arg2, i arg3	setchar(${1:s_arg1}, ${2:s_arg2}, ${3:i_arg3})$0
+0	insertchar	s arg1, s arg2, i arg3	insertchar(${1:s_arg1}, ${2:s_arg2}, ${3:i_arg3})$0
+0	delchar	s arg1, i arg2	delchar(${1:s_arg1}, ${2:i_arg2})$0
+0	strtoupper	s arg1	strtoupper(${1:s_arg1})$0
+0	strtolower	s arg1	strtolower(${1:s_arg1})$0
+0	charisupper	s arg1, i arg2	charisupper(${1:s_arg1}, ${2:i_arg2})$0
+0	charislower	s arg1, i arg2	charislower(${1:s_arg1}, ${2:i_arg2})$0
+0	substr	s arg1, i arg2, i arg3	substr(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	explode	r arg1, s arg2, s arg3	explode(${1:r_arg1}, ${2:s_arg2}, ${3:s_arg3})$0
+0	implode	r arg1, ? arg2	implode(${1:r_arg1}, ${2:?_arg2})$0
+0	sprintf	s arg1, * arg2	sprintf(${1:s_arg1}, ${2:*_arg2})$0
+0	sscanf	s arg1, s arg2, * arg3	sscanf(${1:s_arg1}, ${2:s_arg2}, ${3:*_arg3})$0
+0	strpos	s arg1, s arg2, ? arg3	strpos(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	replacestr	s arg1, s arg2, s arg3, ? arg4, ? arg5	replacestr(${1:s_arg1}, ${2:s_arg2}, ${3:s_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	countstr	s arg1, s arg2, ? arg3	countstr(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	setnpcdisplay	s arg1, v arg2, ? arg3, ? arg4	setnpcdisplay(${1:s_arg1}, ${2:v_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	compare	s arg1, s arg2	compare(${1:s_arg1}, ${2:s_arg2})$0
+0	strcmp	s arg1, s arg2	strcmp(${1:s_arg1}, ${2:s_arg2})$0
+0	getiteminfo	i arg1, i arg2	getiteminfo(${1:i_arg1}, ${2:i_arg2})$0
+0	setiteminfo	i arg1, i arg2, i arg3	setiteminfo(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	getequipcardid	i arg1, i arg2	getequipcardid(${1:i_arg1}, ${2:i_arg2})$0
+0	sqrt	i arg1	sqrt(${1:i_arg1})$0
+0	pow	i arg1, i arg2	pow(${1:i_arg1}, ${2:i_arg2})$0
+0	distance	i arg1, i arg2, i arg3, i arg4	distance(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	min	* arg1	min(${1:*_arg1})$0
+0	minimum	* arg1	minimum(${1:*_arg1})$0
+0	max	* arg1	max(${1:*_arg1})$0
+0	maximum	* arg1	maximum(${1:*_arg1})$0
+0	md5	s arg1	md5(${1:s_arg1})$0
+0	getd	s arg1	getd(${1:s_arg1})$0
+0	setd	s arg1, v arg2, ? arg3	setd(${1:s_arg1}, ${2:v_arg2}, ${3:?_arg3})$0
+0	callshop	s arg1, ? arg2	callshop(${1:s_arg1}, ${2:?_arg2})$0
+0	npcshopitem	s arg1, i arg2, i arg3, * arg4	npcshopitem(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:*_arg4})$0
+0	npcshopadditem	s arg1, i arg2, i arg3, * arg4	npcshopadditem(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:*_arg4})$0
+0	npcshopdelitem	s arg1, i arg2, * arg3	npcshopdelitem(${1:s_arg1}, ${2:i_arg2}, ${3:*_arg3})$0
+0	npcshopattach	s arg1, ? arg2	npcshopattach(${1:s_arg1}, ${2:?_arg2})$0
+0	equip	i arg1, ? arg2	equip(${1:i_arg1}, ${2:?_arg2})$0
+0	autoequip	i arg1, i arg2	autoequip(${1:i_arg1}, ${2:i_arg2})$0
+0	setbattleflag	s arg1, i arg2, ? arg3	setbattleflag(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	getbattleflag	s arg1	getbattleflag(${1:s_arg1})$0
+0	setitemscript	i arg1, s arg2, ? arg3	setitemscript(${1:i_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	disguise	i arg1, ? arg2	disguise(${1:i_arg1}, ${2:?_arg2})$0
+0	undisguise	? arg1	undisguise(${1:?_arg1})$0
+0	getmonsterinfo	i arg1, i arg2	getmonsterinfo(${1:i_arg1}, ${2:i_arg2})$0
+0	addmonsterdrop	v arg1, i arg2, i arg3	addmonsterdrop(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	delmonsterdrop	v arg1, i arg2	delmonsterdrop(${1:v_arg1}, ${2:i_arg2})$0
+0	axtoi	s arg1	axtoi(${1:s_arg1})$0
+0	query_sql	s arg1, * arg2	query_sql(${1:s_arg1}, ${2:*_arg2})$0
+0	query_logsql	s arg1, * arg2	query_logsql(${1:s_arg1}, ${2:*_arg2})$0
+0	escape_sql	v arg1	escape_sql(${1:v_arg1})$0
+0	atoi	s arg1	atoi(${1:s_arg1})$0
+0	strtol	s arg1, i arg2	strtol(${1:s_arg1}, ${2:i_arg2})$0
+0	rid2name	i arg1	rid2name(${1:i_arg1})$0
+0	pcfollow	i arg1, i arg2	pcfollow(${1:i_arg1}, ${2:i_arg2})$0
+0	pcstopfollow	i arg1	pcstopfollow(${1:i_arg1})$0
+0	pcblockmove	i arg1, i arg2	pcblockmove(${1:i_arg1}, ${2:i_arg2})$0
+0	unitblockmove	i arg1, i arg2	unitblockmove(${1:i_arg1}, ${2:i_arg2})$0
+0	pcblockskill	i arg1, i arg2	pcblockskill(${1:i_arg1}, ${2:i_arg2})$0
+0	unitblockskill	i arg1, i arg2	unitblockskill(${1:i_arg1}, ${2:i_arg2})$0
+0	setpcblock	i arg1, i arg2, ? arg3	setpcblock(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	getpcblock	? arg1	getpcblock(${1:?_arg1})$0
+0	unitexists	i arg1	unitexists(${1:i_arg1})$0
+0	getunittype	i arg1	getunittype(${1:i_arg1})$0
+0	getunitname	i arg1	getunitname(${1:i_arg1})$0
+0	setunitname	i arg1, s arg2	setunitname(${1:i_arg1}, ${2:s_arg2})$0
+0	getunitdata	i arg1, * arg2	getunitdata(${1:i_arg1}, ${2:*_arg2})$0
+0	setunitdata	i arg1, i arg2, i arg3	setunitdata(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	unitwalk	i arg1, i arg2, i arg3, ? arg4	unitwalk(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	unitwalkto	i arg1, i arg2, ? arg3	unitwalkto(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	unitkill	i arg1	unitkill(${1:i_arg1})$0
+0	unitwarp	i arg1, s arg2, i arg3, i arg4	unitwarp(${1:i_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	unitattack	i arg1, v arg2, ? arg3	unitattack(${1:i_arg1}, ${2:v_arg2}, ${3:?_arg3})$0
+0	unitstopattack	i arg1	unitstopattack(${1:i_arg1})$0
+0	unitstopwalk	i arg1, ? arg2	unitstopwalk(${1:i_arg1}, ${2:?_arg2})$0
+0	unittalk	i arg1, s arg2, ? arg3	unittalk(${1:i_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	unitskilluseid	i arg1, v arg2, i arg3, ? arg4, ? arg5	unitskilluseid(${1:i_arg1}, ${2:v_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	unitskillusepos	i arg1, v arg2, i arg3, i arg4, i arg5, ? arg6	unitskillusepos(${1:i_arg1}, ${2:v_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:?_arg6})$0
+0	sleep	i arg1	sleep(${1:i_arg1})$0
+0	sleep2	i arg1	sleep2(${1:i_arg1})$0
+0	awake	s arg1	awake(${1:s_arg1})$0
+0	getvariableofnpc	r arg1, s arg2	getvariableofnpc(${1:r_arg1}, ${2:s_arg2})$0
+0	warpportal	i arg1, i arg2, s arg3, i arg4, i arg5	warpportal(${1:i_arg1}, ${2:i_arg2}, ${3:s_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	homevolution
+0	hommutate	? arg1	hommutate(${1:?_arg1})$0
+0	morphembryo
+0	homshuffle
+0	checkhomcall
+0	eaclass	? arg1, ? arg2	eaclass(${1:?_arg1}, ${2:?_arg2})$0
+0	roclass	i arg1, ? arg2	roclass(${1:i_arg1}, ${2:?_arg2})$0
+0	checkvending	? arg1	checkvending(${1:?_arg1})$0
+0	checkchatting	? arg1	checkchatting(${1:?_arg1})$0
+0	checkidle	? arg1	checkidle(${1:?_arg1})$0
+0	openmail	? arg1	openmail(${1:?_arg1})$0
+0	openauction	? arg1	openauction(${1:?_arg1})$0
+0	checkcell	s arg1, i arg2, i arg3, i arg4	checkcell(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	setcell	s arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7	setcell(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7})$0
+0	getfreecell	s arg1, r arg2, r arg3, ? arg4, ? arg5, ? arg6, ? arg7, ? arg8	getfreecell(${1:s_arg1}, ${2:r_arg2}, ${3:r_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7}, ${8:?_arg8})$0
+0	setwall	s arg1, i arg2, i arg3, i arg4, i arg5, i arg6, s arg7	setwall(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:s_arg7})$0
+0	delwall	s arg1	delwall(${1:s_arg1})$0
+0	checkwall	s arg1	checkwall(${1:s_arg1})$0
+0	searchitem	r arg1, s arg2	searchitem(${1:r_arg1}, ${2:s_arg2})$0
+0	mercenary_create	i arg1, i arg2	mercenary_create(${1:i_arg1}, ${2:i_arg2})$0
+0	mercenary_heal	i arg1, i arg2	mercenary_heal(${1:i_arg1}, ${2:i_arg2})$0
+0	mercenary_sc_start	i arg1, i arg2, i arg3	mercenary_sc_start(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	mercenary_get_calls	i arg1	mercenary_get_calls(${1:i_arg1})$0
+0	mercenary_get_faith	i arg1	mercenary_get_faith(${1:i_arg1})$0
+0	mercenary_set_calls	i arg1, i arg2	mercenary_set_calls(${1:i_arg1}, ${2:i_arg2})$0
+0	mercenary_set_faith	i arg1, i arg2	mercenary_set_faith(${1:i_arg1}, ${2:i_arg2})$0
+0	readbook	i arg1, i arg2	readbook(${1:i_arg1}, ${2:i_arg2})$0
+0	setfont	i arg1	setfont(${1:i_arg1})$0
+0	areamobuseskill	s arg1, i arg2, i arg3, i arg4, i arg5, v arg6, i arg7, i arg8, i arg9, i arg10, i arg11	areamobuseskill(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:v_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:i_arg10}, ${11:i_arg11})$0
+0	progressbar	s arg1, i arg2	progressbar(${1:s_arg1}, ${2:i_arg2})$0
+0	progressbar_npc	s arg1, i arg2, ? arg3	progressbar_npc(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	pushpc	i arg1, i arg2	pushpc(${1:i_arg1}, ${2:i_arg2})$0
+0	buyingstore	i arg1	buyingstore(${1:i_arg1})$0
+0	searchstores	i arg1, i arg2	searchstores(${1:i_arg1}, ${2:i_arg2})$0
+0	showdigit	i arg1, ? arg2	showdigit(${1:i_arg1}, ${2:?_arg2})$0
+0	agitstart2
+0	agitend2
+0	agitcheck2
+0	waitingroom2bg	s arg1, i arg2, i arg3, ? arg4, ? arg5, ? arg6	waitingroom2bg(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	waitingroom2bg_single	i arg1, ? arg2, ? arg3, ? arg4, ? arg5	waitingroom2bg_single(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	bg_team_setxy	i arg1, i arg2, i arg3	bg_team_setxy(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	bg_warp	i arg1, s arg2, i arg3, i arg4	bg_warp(${1:i_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	bg_monster	i arg1, s arg2, i arg3, i arg4, s arg5, i arg6, ? arg7	bg_monster(${1:i_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:s_arg5}, ${6:i_arg6}, ${7:?_arg7})$0
+0	bg_monster_set_team	i arg1, i arg2	bg_monster_set_team(${1:i_arg1}, ${2:i_arg2})$0
+0	bg_leave	? arg1	bg_leave(${1:?_arg1})$0
+0	bg_destroy	i arg1	bg_destroy(${1:i_arg1})$0
+0	areapercentheal	s arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7	areapercentheal(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7})$0
+0	bg_get_data	i arg1, i arg2	bg_get_data(${1:i_arg1}, ${2:i_arg2})$0
+0	bg_getareausers	i arg1, s arg2, i arg3, i arg4, i arg5, i arg6	bg_getareausers(${1:i_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6})$0
+0	bg_updatescore	s arg1, i arg2, i arg3	bg_updatescore(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	bg_join	i arg1, ? arg2, ? arg3, ? arg4, ? arg5	bg_join(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	bg_create	s arg1, i arg2, i arg3, ? arg4, ? arg5	bg_create(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	instance_create	s arg1, ? arg2, ? arg3	instance_create(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	instance_destroy	? arg1	instance_destroy(${1:?_arg1})$0
+0	instance_id	? arg1	instance_id(${1:?_arg1})$0
+0	instance_enter	s arg1, ? arg2, ? arg3, ? arg4, ? arg5	instance_enter(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	instance_npcname	s arg1, ? arg2	instance_npcname(${1:s_arg1}, ${2:?_arg2})$0
+0	instance_mapname	s arg1, ? arg2	instance_mapname(${1:s_arg1}, ${2:?_arg2})$0
+0	instance_warpall	s arg1, i arg2, i arg3, ? arg4	instance_warpall(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	instance_announce	i arg1, s arg2, i arg3, ? arg4, ? arg5, ? arg6, ? arg7, ? arg8	instance_announce(${1:i_arg1}, ${2:s_arg2}, ${3:i_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7}, ${8:?_arg8})$0
+0	instance_check_party	i arg1, ? arg2, ? arg3, ? arg4	instance_check_party(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	instance_check_guild	i arg1, ? arg2, ? arg3, ? arg4	instance_check_guild(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	instance_check_clan	i arg1, ? arg2, ? arg3, ? arg4	instance_check_clan(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	instance_info	s arg1, i arg2, ? arg3	instance_info(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	instance_live_info	i arg1, ? arg2	instance_live_info(${1:i_arg1}, ${2:?_arg2})$0
+0	makerune	i arg1, ? arg2	makerune(${1:i_arg1}, ${2:?_arg2})$0
+0	checkdragon	? arg1	checkdragon(${1:?_arg1})$0
+0	setdragon	? arg1, ? arg2	setdragon(${1:?_arg1}, ${2:?_arg2})$0
+0	ismounting	? arg1	ismounting(${1:?_arg1})$0
+0	setmounting	? arg1	setmounting(${1:?_arg1})$0
+0	checkre	i arg1	checkre(${1:i_arg1})$0
+0	getargcount
+0	getcharip	? arg1	getcharip(${1:?_arg1})$0
+0	is_function	s arg1	is_function(${1:s_arg1})$0
+0	get_revision
+0	get_githash
+0	freeloop	? arg1	freeloop(${1:?_arg1})$0
+0	getrandgroupitem	i arg1, ? arg2, ? arg3, ? arg4, ? arg5	getrandgroupitem(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5})$0
+0	cleanmap	s arg1	cleanmap(${1:s_arg1})$0
+0	cleanarea	s arg1, i arg2, i arg3, i arg4, i arg5	cleanarea(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5})$0
+0	npcskill	v arg1, i arg2, i arg3, i arg4	npcskill(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4})$0
+0	consumeitem	v arg1, ? arg2	consumeitem(${1:v_arg1}, ${2:?_arg2})$0
+0	delequip	i arg1, ? arg2	delequip(${1:i_arg1}, ${2:?_arg2})$0
+0	breakequip	i arg1, ? arg2	breakequip(${1:i_arg1}, ${2:?_arg2})$0
+0	sit	? arg1	sit(${1:?_arg1})$0
+0	stand	? arg1	stand(${1:?_arg1})$0
+0	bindatcmd	s arg1, s arg2, ? arg3, ? arg4	bindatcmd(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	unbindatcmd	s arg1	unbindatcmd(${1:s_arg1})$0
+0	useatcmd	s arg1	useatcmd(${1:s_arg1})$0
+0	questinfo	i arg1, i arg2, ? arg3, ? arg4	questinfo(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	setquest	i arg1, ? arg2	setquest(${1:i_arg1}, ${2:?_arg2})$0
+0	erasequest	i arg1, ? arg2	erasequest(${1:i_arg1}, ${2:?_arg2})$0
+0	completequest	i arg1, ? arg2	completequest(${1:i_arg1}, ${2:?_arg2})$0
+0	checkquest	i arg1, ? arg2, ? arg3	checkquest(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	isbegin_quest	i arg1, ? arg2	isbegin_quest(${1:i_arg1}, ${2:?_arg2})$0
+0	changequest	i arg1, i arg2, ? arg3	changequest(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	showevent	i arg1, ? arg2, ? arg3	showevent(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	getitembound	v arg1, i arg2, i arg3, ? arg4	getitembound(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	getitembound2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, i arg10, ? arg11	getitembound2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:i_arg10}, ${11:?_arg11})$0
+0	countbound	? arg1, ? arg2	countbound(${1:?_arg1}, ${2:?_arg2})$0
+0	party_create	s arg1, ? arg2, ? arg3, ? arg4	party_create(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	party_addmember	i arg1, i arg2	party_addmember(${1:i_arg1}, ${2:i_arg2})$0
+0	party_delmember	? arg1, ? arg2	party_delmember(${1:?_arg1}, ${2:?_arg2})$0
+0	party_changeleader	i arg1, i arg2	party_changeleader(${1:i_arg1}, ${2:i_arg2})$0
+0	party_changeoption	i arg1, i arg2, i arg3	party_changeoption(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	party_destroy	i arg1	party_destroy(${1:i_arg1})$0
+0	clan_join	i arg1, ? arg2	clan_join(${1:i_arg1}, ${2:?_arg2})$0
+0	clan_leave	? arg1	clan_leave(${1:?_arg1})$0
+0	transform	v arg1, i arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7	transform(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	active_transform	v arg1, i arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7	active_transform(${1:v_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	vip_status	i arg1, ? arg2	vip_status(${1:i_arg1}, ${2:?_arg2})$0
+0	vip_time	i arg1, ? arg2	vip_time(${1:i_arg1}, ${2:?_arg2})$0
+0	bonus_script	s arg1, i arg2, ? arg3, ? arg4, ? arg5, ? arg6	bonus_script(${1:s_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6})$0
+0	bonus_script_clear	? arg1, ? arg2	bonus_script_clear(${1:?_arg1}, ${2:?_arg2})$0
+0	getgroupitem	i arg1, ? arg2, ? arg3	getgroupitem(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	enable_command
+0	disable_command
+0	getguildmember	i arg1, ? arg2, ? arg3	getguildmember(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	addspiritball	i arg1, i arg2, ? arg3	addspiritball(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	delspiritball	i arg1, ? arg2	delspiritball(${1:i_arg1}, ${2:?_arg2})$0
+0	countspiritball	? arg1	countspiritball(${1:?_arg1})$0
+0	mergeitem	? arg1	mergeitem(${1:?_arg1})$0
+0	mergeitem2	? arg1, ? arg2	mergeitem2(${1:?_arg1}, ${2:?_arg2})$0
+0	npcshopupdate	s arg1, i arg2, i arg3, ? arg4	npcshopupdate(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	getattachedrid
+0	getvar	v arg1, i arg2	getvar(${1:v_arg1}, ${2:i_arg2})$0
+0	showscript	s arg1, ? arg2, ? arg3	showscript(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	ignoretimeout	i arg1, ? arg2	ignoretimeout(${1:i_arg1}, ${2:?_arg2})$0
+0	geteleminfo	i arg1, ? arg2	geteleminfo(${1:i_arg1}, ${2:?_arg2})$0
+0	setquestinfo_level	i arg1, i arg2, i arg3	setquestinfo_level(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	setquestinfo_req	i arg1, i arg2, i arg3, * arg4	setquestinfo_req(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:*_arg4})$0
+0	setquestinfo_job	i arg1, i arg2, * arg3	setquestinfo_job(${1:i_arg1}, ${2:i_arg2}, ${3:*_arg3})$0
+0	opendressroom	i arg1, ? arg2	opendressroom(${1:i_arg1}, ${2:?_arg2})$0
+0	navigateto	s arg1, ? arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7, ? arg8	navigateto(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7}, ${8:?_arg8})$0
+0	getguildalliance	i arg1, i arg2	getguildalliance(${1:i_arg1}, ${2:i_arg2})$0
+0	adopt	v arg1, v arg2	adopt(${1:v_arg1}, ${2:v_arg2})$0
+0	getexp2	i arg1, i arg2, ? arg3	getexp2(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	recalculatestat
+0	hateffect	i arg1, i arg2	hateffect(${1:i_arg1}, ${2:i_arg2})$0
+0	getrandomoptinfo	i arg1	getrandomoptinfo(${1:i_arg1})$0
+0	getequiprandomoption	i arg1, i arg2, i arg3, ? arg4	getequiprandomoption(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	setrandomoption	i arg1, i arg2, i arg3, i arg4, i arg5, ? arg6	setrandomoption(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:?_arg6})$0
+0	needed_status_point	i arg1, i arg2, ? arg3	needed_status_point(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	jobcanentermap	s arg1, ? arg2	jobcanentermap(${1:s_arg1}, ${2:?_arg2})$0
+0	openstorage2	i arg1, i arg2, ? arg3	openstorage2(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	unloadnpc	s arg1	unloadnpc(${1:s_arg1})$0
+0	agitstart3
+0	agitend3
+0	agitcheck3
+0	gvgon3	s arg1	gvgon3(${1:s_arg1})$0
+0	gvgoff3	s arg1	gvgoff3(${1:s_arg1})$0
+0	channel_create	s arg1, s arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7	channel_create(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7})$0
+0	channel_setopt	s arg1, i arg2, i arg3	channel_setopt(${1:s_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
+0	channel_setcolor	s arg1, i arg2	channel_setcolor(${1:s_arg1}, ${2:i_arg2})$0
+0	channel_setpass	s arg1, s arg2	channel_setpass(${1:s_arg1}, ${2:s_arg2})$0
+0	channel_setgroup	s arg1, i arg2, * arg3	channel_setgroup(${1:s_arg1}, ${2:i_arg2}, ${3:*_arg3})$0
+0	channel_setgroup2	s arg1, r arg2	channel_setgroup2(${1:s_arg1}, ${2:r_arg2})$0
+0	channel_chat	s arg1, s arg2, ? arg3	channel_chat(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3})$0
+0	channel_ban	s arg1, i arg2	channel_ban(${1:s_arg1}, ${2:i_arg2})$0
+0	channel_unban	s arg1, i arg2	channel_unban(${1:s_arg1}, ${2:i_arg2})$0
+0	channel_kick	s arg1, v arg2	channel_kick(${1:s_arg1}, ${2:v_arg2})$0
+0	channel_delete	s arg1	channel_delete(${1:s_arg1})$0
+0	getitem3	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, r arg10, r arg11, r arg12, ? arg13	getitem3(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:r_arg10}, ${11:r_arg11}, ${12:r_arg12}, ${13:?_arg13})$0
+0	getitembound3	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, i arg10, r arg11, r arg12, r arg13, ? arg14	getitembound3(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:i_arg10}, ${11:r_arg11}, ${12:r_arg12}, ${13:r_arg13}, ${14:?_arg14})$0
+0	rentitem3	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, r arg10, r arg11, r arg12, ? arg13	rentitem3(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:r_arg10}, ${11:r_arg11}, ${12:r_arg12}, ${13:?_arg13})$0
+0	makeitem3	v arg1, i arg2, s arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, i arg10, i arg11, i arg12, r arg13, r arg14, r arg15	makeitem3(${1:v_arg1}, ${2:i_arg2}, ${3:s_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:i_arg10}, ${11:i_arg11}, ${12:i_arg12}, ${13:r_arg13}, ${14:r_arg14}, ${15:r_arg15})$0
+0	delitem3	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, r arg10, r arg11, r arg12, ? arg13	delitem3(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:r_arg10}, ${11:r_arg11}, ${12:r_arg12}, ${13:?_arg13})$0
+0	countitem3	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, r arg9, r arg10, r arg11, ? arg12	countitem3(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:r_arg9}, ${10:r_arg10}, ${11:r_arg11}, ${12:?_arg12})$0
+0	achievementinfo	i arg1, i arg2, ? arg3	achievementinfo(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
+0	achievementadd	i arg1, ? arg2	achievementadd(${1:i_arg1}, ${2:?_arg2})$0
+0	achievementremove	i arg1, ? arg2	achievementremove(${1:i_arg1}, ${2:?_arg2})$0
+0	achievementcomplete	i arg1, ? arg2	achievementcomplete(${1:i_arg1}, ${2:?_arg2})$0
+0	achievementexists	i arg1, ? arg2	achievementexists(${1:i_arg1}, ${2:?_arg2})$0
+0	achievementupdate	i arg1, i arg2, i arg3, ? arg4	achievementupdate(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	getequiprefinecost	i arg1, i arg2, i arg3, ? arg4	getequiprefinecost(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	round	i arg1	round(${1:i_arg1})$0
+0	ceil	i arg1	ceil(${1:i_arg1})$0
+0	floor	i arg1	floor(${1:i_arg1})$0
+0	getequiptradability	i arg1, ? arg2	getequiptradability(${1:i_arg1}, ${2:?_arg2})$0
+0	mail	i arg1, s arg2, s arg3, s arg4, * arg5	mail(${1:i_arg1}, ${2:s_arg2}, ${3:s_arg3}, ${4:s_arg4}, ${5:*_arg5})$0
+0	open_roulette	? arg1	open_roulette(${1:?_arg1})$0
+0	identifyall	? arg1, ? arg2	identifyall(${1:?_arg1}, ${2:?_arg2})$0
+0	is_guild_leader	? arg1	is_guild_leader(${1:?_arg1})$0
+0	is_party_leader	? arg1	is_party_leader(${1:?_arg1})$0
+0	camerainfo	i arg1, i arg2, i arg3, ? arg4	camerainfo(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
+0	achievement_condition	i arg1	achievement_condition(${1:i_arg1})$0
+0	getvariableofinstance	r arg1, i arg2	getvariableofinstance(${1:r_arg1}, ${2:i_arg2})$0
+0	convertpcinfo	v arg1, i arg2	convertpcinfo(${1:v_arg1}, ${2:i_arg2})$0

@@ -1843,13 +1843,22 @@ function copySearchRegex() {
     vscode.env.clipboard.writeText(text);
 }
 function isDocumentAthenaDB(document) {
-    if ((document.fileName.endsWith("_db.txt")
+    if (document.fileName.endsWith("_db.txt")
         || document.fileName.endsWith("_db2.txt")
-        || formatFileName(document.fileName).includes(formatFileName(athenaDbDir)))
-        && document.lineAt(0).text.startsWith("//") && document.lineAt(0).text.includes(","))
-        return true;
-    else
-        return false;
+        || formatFileName(document.fileName).includes(formatFileName(athenaDbDir))) {
+        let isLineDefOnNextLine = false;
+        for (let i = 0; i < 20 && i < document.lineCount - 1; i++) {
+            let lineText = document.lineAt(i).text;
+            if ((isLineDefOnNextLine || i == 0) && lineText.startsWith("//") && lineText.includes(",")) {
+                return true;
+            }
+            else if (lineText.toLowerCase().startsWith("// structure of database")) {
+                isLineDefOnNextLine = true;
+                continue;
+            }
+        }
+    }
+    return false;
 }
 let itemBonusTxtPath;
 let questid2displaypath;

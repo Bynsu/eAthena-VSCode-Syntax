@@ -1,2 +1,7 @@
 .vscode-test/
 *.vsix
+/out/extension.js.map
+/out/test/extension.test.js
+/out/test/extension.test.js.map
+/out/test/index.js
+/out/test/index.js.map

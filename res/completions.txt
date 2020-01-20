@@ -494,7 +494,7 @@
 0	bindatcmd	s arg1, s arg2, ? arg3, ? arg4	bindatcmd(${1:s_arg1}, ${2:s_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
 0	unbindatcmd	s arg1	unbindatcmd(${1:s_arg1})$0
 0	useatcmd	s arg1	useatcmd(${1:s_arg1})$0
-0	questinfo	i arg1, i arg2, ? arg3, ? arg4	questinfo(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3}, ${4:?_arg4})$0
+0	questinfo	i arg1, ? arg2, ? arg3	questinfo(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
 0	setquest	i arg1, ? arg2	setquest(${1:i_arg1}, ${2:?_arg2})$0
 0	erasequest	i arg1, ? arg2	erasequest(${1:i_arg1}, ${2:?_arg2})$0
 0	completequest	i arg1, ? arg2	completequest(${1:i_arg1}, ${2:?_arg2})$0
@@ -502,6 +502,7 @@
 0	isbegin_quest	i arg1, ? arg2	isbegin_quest(${1:i_arg1}, ${2:?_arg2})$0
 0	changequest	i arg1, i arg2, ? arg3	changequest(${1:i_arg1}, ${2:i_arg2}, ${3:?_arg3})$0
 0	showevent	i arg1, ? arg2, ? arg3	showevent(${1:i_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
+0	questinfo_refresh	? arg1	questinfo_refresh(${1:?_arg1})$0
 0	getitembound	v arg1, i arg2, i arg3, ? arg4	getitembound(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:?_arg4})$0
 0	getitembound2	v arg1, i arg2, i arg3, i arg4, i arg5, i arg6, i arg7, i arg8, i arg9, i arg10, ? arg11	getitembound2(${1:v_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:i_arg4}, ${5:i_arg5}, ${6:i_arg6}, ${7:i_arg7}, ${8:i_arg8}, ${9:i_arg9}, ${10:i_arg10}, ${11:?_arg11})$0
 0	countbound	? arg1, ? arg2	countbound(${1:?_arg1}, ${2:?_arg2})$0
@@ -534,9 +535,6 @@
 0	showscript	s arg1, ? arg2, ? arg3	showscript(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3})$0
 0	ignoretimeout	i arg1, ? arg2	ignoretimeout(${1:i_arg1}, ${2:?_arg2})$0
 0	geteleminfo	i arg1, ? arg2	geteleminfo(${1:i_arg1}, ${2:?_arg2})$0
-0	setquestinfo_level	i arg1, i arg2, i arg3	setquestinfo_level(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3})$0
-0	setquestinfo_req	i arg1, i arg2, i arg3, * arg4	setquestinfo_req(${1:i_arg1}, ${2:i_arg2}, ${3:i_arg3}, ${4:*_arg4})$0
-0	setquestinfo_job	i arg1, i arg2, * arg3	setquestinfo_job(${1:i_arg1}, ${2:i_arg2}, ${3:*_arg3})$0
 0	opendressroom	i arg1, ? arg2	opendressroom(${1:i_arg1}, ${2:?_arg2})$0
 0	navigateto	s arg1, ? arg2, ? arg3, ? arg4, ? arg5, ? arg6, ? arg7, ? arg8	navigateto(${1:s_arg1}, ${2:?_arg2}, ${3:?_arg3}, ${4:?_arg4}, ${5:?_arg5}, ${6:?_arg6}, ${7:?_arg7}, ${8:?_arg8})$0
 0	getguildalliance	i arg1, i arg2	getguildalliance(${1:i_arg1}, ${2:i_arg2})$0

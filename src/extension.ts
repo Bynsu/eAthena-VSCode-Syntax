@@ -1,13 +1,9 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import { format } from 'url';
-import { stringify } from 'querystring';
+import * as fs from 'fs';
 import { Dirent } from 'fs';
-import { isNumber } from 'util';
-import { start } from 'repl';
-import { dirname } from 'path';
-import { strict } from 'assert';
+import * as iconv from 'iconv-lite';
+import * as vscode from 'vscode';
 
 let itemDB : AthenaItemDB;
 let mobDB : AthenaMobDB;
@@ -15,6 +11,7 @@ let mobSkillDB : AthenaMobSkillDB;
 let questDB : AthenaQuestDB;
 let skillDB : AthenaSkillDB;
 let skillCastDB : AthenaSkillCastDB;
+let itemTradeDB : AthenaItemTradeDB;
 
 let scriptFunctionDB = new Map<string, AthenaFunctionInfo>();
 
@@ -23,21 +20,20 @@ let constDB = new Map<string, AthenaConst>();
 let forceDbColumnHighlight = new Map<string, boolean>();
 let forceDbColumnHints = new Map<string, boolean>();
 
-let fs = require('fs');
-let iconv = require('iconv-lite');
 let codepage = "win1252";
 
-const is_rAthena = true;
+let is_rAthena = false;
 
 const languageId = "eAthena";
+const languageIdLowerCase = "eathena";
 
 let documentToDecorationTypes = new Map<vscode.TextDocument, vscode.TextEditorDecorationType[]>(); 
 let documentToAthenaDBFile = new Map<vscode.TextDocument, AthenaDBFile>();
 
 // NOTE: need to change wordPattern in language-configuration.json if we change here
 let wordPattern = new RegExp("(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\\"\\,\\<\\>\\/\\?\\s]+)");
-
 let serverQuestDbPath : string;
+let athenaDir : string;
 let athenaNpcDir : string;
 let athenaDbDir : string;
 let wordSeparators : string;
@@ -45,6 +41,11 @@ let wordSeparators : string;
 let itemImageURL : string|undefined;
 let mobImageURL : string|undefined;
 let skillImageURL : string|undefined; 
+
+let webviewPanel : vscode.WebviewPanel|undefined;
+let webviewPanelEditor : vscode.TextEditor;
+let webviewPanelLineNum : number|undefined;
+let webviewPanelActiveParam : number|undefined;
 
 class AthenaConst {
 	name : string;
@@ -66,22 +67,23 @@ function fileNamesEqual(fn1 : string, fn2 : string) : boolean {
 
 function getAutoLoadedDatabases() : Array<AthenaDB>
 {
-	return [ itemDB, mobDB, questDB, skillDB, skillCastDB, mobSkillDB];
+	return [ itemDB, mobDB, questDB, skillDB, skillCastDB, mobSkillDB, itemTradeDB];
 }
 
 function initDocumentAthenaDbFile(document : vscode.TextDocument) : AthenaDBFile
 {
 	// In case of special databases we just update lines of existing files.
 	let autoLoadedDatabases = getAutoLoadedDatabases();
-	autoLoadedDatabases.forEach(db => {
-		let dbFile = db.findFileByFilePath(document.fileName);
+	for ( let i = 0; i < autoLoadedDatabases.length; i++ ) { // no foreach to allow preemptive return
+		let dbFile = autoLoadedDatabases[i].findFileByFilePath(document.fileName);
 		if ( dbFile ) {
 			dbFile.updateLines(document.getText(), true);
 			return dbFile;
 		}
-	});
+	}
 
 	// Otherwise we create a new temporary DB and cache it
+	// Guess DB type by file name
 	let db : AthenaDB;
 	if ( document.fileName.endsWith("item_db.txt") || document.fileName.endsWith("item_db2.txt") )
 		db = new AthenaItemDB([document.fileName]);
@@ -89,12 +91,14 @@ function initDocumentAthenaDbFile(document : vscode.TextDocument) : AthenaDBFile
 		db = new AthenaMobDB([document.fileName]);
 	else if ( document.fileName.endsWith("quest_db.txt") )
 		db = new AthenaQuestDB([document.fileName]);
+	else if ( document.fileName.endsWith("mob_skill_db.txt") || document.fileName.endsWith("mob_skill_db2.txt") ) // needs to be before skill_db to avoid mistaking mob_skill_db for skill_db
+		db = new AthenaMobSkillDB([document.fileName]);
 	else if ( document.fileName.endsWith("skill_db.txt") )
 		db = new AthenaSkillDB(document.fileName);
 	else if ( document.fileName.endsWith("skill_cast_db.txt") )
 		db = new AthenaSkillCastDB(document.fileName);
-	else if ( document.fileName.endsWith("mob_skill_db.txt") || document.fileName.endsWith("mob_skill_db2.txt") ) 
-		db = new AthenaMobSkillDB([document.fileName]);
+	else if ( document.fileName.endsWith("item_trade.txt") )
+		db = new AthenaItemTradeDB(document.fileName);
 	else
 		db = new AthenaDB([document.fileName]);
 
@@ -112,6 +116,17 @@ function ensureDocumentAthenaDbFile(document : vscode.TextDocument) : AthenaDBFi
 	}	
 	return documentToAthenaDBFile.get(document) || initDocumentAthenaDbFile(document);
 }
+
+function makeHTMLLink(visibleText : string, filePath : string, lineNum0based : number, position0based? : number) : string
+{
+	let uri = vscode.Uri.file(filePath);
+	let filePathWithPosition = uri + "#" + (lineNum0based+1);
+	if ( position0based )
+		filePathWithPosition +=","+(position0based+1);
+
+	return "<a href='#' onclick='selectParameter(\""+ visibleText +"\");' id='"+ visibleText +"'>" + visibleText + "</a>";
+}
+
 
 function makeMarkdownLink(visibleText : string, filePath : string, lineNum0based : number, position0based? : number) : string
 {
@@ -137,26 +152,6 @@ function isWhitespace(str : string) : boolean
 	return true;
 }
 
-function trimString(str : string) : string
-{
-	return str.trim();
-	
-	// Зачем я делал собственную реализацию при наличии string.trim()?
-
-	// let start;
-	// for ( start = 0; start < str.length; start++ )
-	// 	if ( !isWhitespace(str.charAt(start)) )
-	// 		break;
-	// let end; 
-	// for ( end = str.length - 1; end > start; end-- )
-	// 	if ( !isWhitespace(str.charAt(end)) )
-	// 		break;
-	// if ( end < start )
-	// 	return "";
-	// else
-	// 	return str.substring(start, end+1);
-}
-
 
 class AthenaDBLine {
 	filePath : string;
@@ -175,19 +170,22 @@ class AthenaDBLine {
 		let comment = false;
 		let paramStart = 0;
 		let i = 0;
+
 		for ( ; i < line.length; i++ ) {
 			if ( i < line.length - 1 && line.charAt(i) == '/' && line.charAt(i+1) == '/' ) {
 				comment = true;
 				break;
 			}
 
-			if ( line.charAt(i) == '\"' ) {
+			let c = line.charAt(i);
+
+			if ( c == '\"' ) {
 				while ( i < line.length ) {
 					i++;
 					if ( line.charAt(i) == '\"' && line.charAt(i-1) != '\"' )
 						break;
 				}
-			} else if ( line.charAt(i) == '{' ) {
+			} else if ( c == '{' ) {
 				let curlyLevel = 1;				
 				while ( curlyLevel > 0 && i < line.length ) {
 					i++
@@ -196,7 +194,7 @@ class AthenaDBLine {
 					else if ( line.charAt(i) == '}' )
 						curlyLevel--;
 				}
-			} else if ( line.charAt(i) == ',' ) {
+			} else if ( c == ',' ) {
 				this.params.push(line.substring(paramStart, i).trim());
 				this.paramRanges.push(new vscode.Range(lineNum, paramStart, lineNum, i));
 				paramStart = i+1;
@@ -224,13 +222,26 @@ class AthenaDBLine {
 	getParamByIndex(index : number) : string|undefined {
 		return index < this.params.length ? this.params[index] : undefined;
 	}
+
+	getIntParamByIndex(index : number) : number|undefined {
+		let val = this.getParamByIndex(index);
+		return val ? parseInt(val) : undefined;		
+	}
+
+	getParamIdxAtPosition(position : vscode.Position) : number | undefined {
+		for ( let i = 0; i < this.paramRanges.length; i++ )
+			if ( this.paramRanges[i].contains(position) )
+				return i;
+		return undefined;
+	}
 }
 
 class AthenaDBFile {
 	parentDb : AthenaDB;
 	filePath : string;
 	lines : AthenaDBLine[];
-	
+	symbols : vscode.SymbolInformation[];	
+
 	constructor(parentDb : AthenaDB, filePath : string)
 	{
 
@@ -243,6 +254,7 @@ class AthenaDBFile {
 		this.parentDb = parentDb;
 		this.filePath = filePath;
 		this.lines = [];
+		this.symbols = [];
 
 		let fileContentBytes = fs.readFileSync(filePath);
 		let fileContent : string = iconv.decode(fileContentBytes, codepage);
@@ -285,15 +297,42 @@ class AthenaDBFile {
 		}
 	}
 
-	updateLines(text : string, rebuildIndex : boolean) {
+	updateLines(text : string, rebuildParentDbIndex : boolean) {
 		this.lines = new Array<AthenaDBLine>(0);
 		let strLines = text.split('\n');
 		for ( let i = 0; i < strLines.length; i++ ) {
 			let dbLine = this.createLine(this.filePath, i, strLines[i]);
 			this.lines.push(dbLine);
 		}
-		if ( rebuildIndex )
+
+		this.symbols = [];
+		this.lines.forEach(l => {
+			let label = this.parentDb.getSymbolLabelForLine(l);
+			if ( label ) {
+				// let symbol = new vscode.SymbolInformation(label,
+				// 	vscode.SymbolKind.Variable,
+				// 	this.filePath,
+				// 	new vscode.Location(vscode.Uri.file(this.filePath), new vscode.Range(l.paramRanges[0].start, l.paramRanges[l.paramRanges.length-1].end)));
+
+				let range = new vscode.Range(l.paramRanges[0].start, l.paramRanges[l.paramRanges.length-1].end);
+				let symbol = new vscode.SymbolInformation(label,
+					vscode.SymbolKind.Variable,
+					range,
+					vscode.Uri.file(this.filePath));
+				this.symbols.push(symbol);
+			}
+		});
+
+		if ( rebuildParentDbIndex )
 			this.parentDb.rebuildIndex();
+	}
+
+	getParamIdxAtPosition(position : vscode.Position) : number|undefined {
+		if ( position.line < 0 || position.line >= this.lines.length )
+			return undefined;
+		
+		let line = this.lines[position.line];
+		return line.getParamIdxAtPosition(position);
 	}
 }
 
@@ -308,15 +347,22 @@ class AthenaDB {
 
 	alreadyExplainingLine = false; // to display short descriptions for each param if explaining line
 
+	constructionTime : number;
+
 	constructor(filePaths : Array<string>, lineDef? : string, keyIndex? : number, nameIndex? : number) {
+		let startTime = new Date().getTime();
+
 		this.files = [];
 
 		this.keyIndex = keyIndex || 0;
-		
+		this.nameIndex = nameIndex || 1;
+	
+		// Initialize
 		filePaths.forEach(filePath => {
 			this.files.push(this.createFile(this, filePath));
 		});
 
+		// Set parameter names
 		if ( lineDef )
 			this.paramNames = lineDef.split(',');
 		else {
@@ -338,20 +384,13 @@ class AthenaDB {
 				this.paramNames = paramNamesLine.substr(2).trim().split(",");
 			else
 				this.paramNames = new Array<string>();
+			for ( let i = 0; i < this.paramNames.length; i++ )
+				this.paramNames[i] = this.paramNames[i].trim();
 		}
 
-		if ( !nameIndex ) {
-			if ( !is_rAthena && filePaths[0].endsWith("skill_cast_db.txt") || filePaths[0].endsWith("skill_cast_db2.txt") )
-			 	this.nameIndex = 8;
-			else if ( filePaths[0].endsWith("skill_db.txt") || filePaths[0].endsWith("skill_db2.txt") && !( filePaths[0].endsWith("mob_skill_db.txt") || filePaths[0].endsWith("mob_skill_db2.txt") ) ) 
-				this.nameIndex = this.getParamIndex("name");
-			else
-				this.nameIndex = 1;
-		} else 
-			this.nameIndex = nameIndex;		
-
-
 		this.rebuildIndex();
+
+		this.constructionTime = new Date().getTime() - startTime;
 	}
 
 	createFile(db : AthenaDB, filePath : string) {
@@ -360,7 +399,7 @@ class AthenaDB {
 
 	rebuildIndex() {
 		this.idToDbLine.clear();
-		this.nameToDbLine.clear;
+		this.nameToDbLine.clear();
 		this.files.forEach(f => {
 			f.lines.forEach(l => {
 				if ( this.keyIndex < l.params.length && l.params[this.keyIndex] )
@@ -390,7 +429,7 @@ class AthenaDB {
 		return "";
 	}
 
-	explainParamByLineSub(line : AthenaDBLine, paramIdx : number, modifiedValue : string) {
+	explainParamByLineSub(line : AthenaDBLine, paramIdx : number, modifiedValue : string, html : boolean) {
 		let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : ("param_" + paramIdx);
 		let position = line.paramRanges[paramIdx].start;
 		
@@ -399,48 +438,86 @@ class AthenaDB {
 			let iParamVal = parseInt(modifiedValue);
 			if ( iParamVal.toString() == modifiedValue )
 				modifiedValue = iParamVal.toLocaleString();
-			}
+		}
 		
-		return makeMarkdownLink(paramName, line.filePath, position.line, position.character) + " : " + modifiedValue;
+		return html ? 
+			makeHTMLLink(paramName, line.filePath, position.line, position.character) + ": " + modifiedValue 
+		  : makeMarkdownLink(paramName, line.filePath, position.line, position.character) + " : " + modifiedValue;
 	}
 
-	explainParamByLine(line : AthenaDBLine, paramIdx : number) {
+	explainParamByLine(line : AthenaDBLine, paramIdx : number, html : boolean) {
 		let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
 
 		let iParamVal = parseInt(paramVal);
 		if ( iParamVal.toString() == paramVal )
 			paramVal = iParamVal.toLocaleString();
 
-		return this.explainParamByLineSub(line, paramIdx, paramVal);
+		return this.explainParamByLineSub(line, paramIdx, paramVal, html);
 	}
 
-	explainLine(line : AthenaDBLine) : string
+
+	explainLine(line : AthenaDBLine, html : boolean, cursorPosition? : vscode.Position) : string
 	{
 		this.alreadyExplainingLine = true;
 
 		let maxLength = Math.max(this.paramNames.length,line.params.length);
 		let ret = "";
+		if ( html )
+			ret += `<!DOCTYPE html>
+			<html lang="en">
+			<head>
+				<meta charset="UTF-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<title>Athena Line Preview</title>
+			</head>
+			<body>`;
+
+
+			
+		let activeParam = undefined;
+		if ( cursorPosition != undefined ) 
+			activeParam = line.getParamIdxAtPosition(cursorPosition);
+
 		for ( let i = 0; i < maxLength; i++ ) {
-			// let paramName = ( i < this.paramNames.length ) ? this.paramNames[i] : "?";
 			let paramVal = ( i < line.params.length ) ? line.params[i].trim() : "";
 
 			if ( !paramVal || paramVal == "{}" )
 				continue;
 
 			if ( i != 0 )
-				ret += "  \n"; //ret += ", ";
-			ret += this.explainParamByLine(line, i);
+				ret += html ? "<br>" : "  \n";
+			if ( html && activeParam != undefined && i == activeParam )
+				ret += "<b>"
+
+			ret += this.explainParamByLine(line, i, html);
+
+			if ( html && activeParam != undefined && i == activeParam )
+				ret += "</b>"
 		}
 
 		this.alreadyExplainingLine = false;
+
+		if ( html )
+			ret += `
+			<script>
+			const vscode = acquireVsCodeApi();
+
+			function selectParameter(paramName) {
+				vscode.postMessage({
+					command: 'selectParameter',
+					text: paramName
+				});
+			};
+			</script>
+			</body>
+				</html>`;
+
 		return ret;
 	}
 
 	findFileByFilePath(filePath : string) : AthenaDBFile|undefined {
 		return this.files.find(f => {
 			let ret = fileNamesEqual(f.filePath, filePath);
-			// if ( ret )
-			// 	console.log("file " + filePath + " have been found.");
 			return ret;
 		});
 	}
@@ -454,7 +531,7 @@ class AthenaDB {
 			return undefined;
 	}
 
-	getParamDocumentation(paramName : string) : string|undefined {
+	getParamDocumentation(paramIdx : number) : string|undefined {
 		return undefined;
 	}
 	
@@ -478,6 +555,62 @@ class AthenaDB {
 		}
 		
 		return paramDocumentation;
+	}
+}
+
+
+enum AthenaItemTradeDBTradeMask {
+	NODROP = 1,
+	NOTRADE = 2,
+	ALLOW_PARTNER_TRADE = 4,
+	NOSELLNPC = 8,
+	NOCART = 16,
+	NOSTORAGE = 32,
+	NOGUILDSTORAGE = 64,
+	ALLOW_DROP_INSTANCE_TRANSFER = 128,
+}
+
+enum rAthenaItemTradeDBTradeMask {
+	NODROP = 1,
+	NOTRADE = 2,
+	ALLOW_PARTNER_TRADE = 4,
+	NOSELLNPC = 8,
+	NOCART = 16,
+	NOSTORAGE = 32,
+	NOGUILDSTORAGE = 64,
+	NOMAIL = 128,
+	NOAUCTION = 256,
+}
+
+
+enum AthenaItemTradeDBColumns {
+	ItemId,
+	TradeMask,
+	GmOverride
+}
+
+class AthenaItemTradeDB extends AthenaDB {
+
+	constructor(fileName? : string) {
+		super([fileName || (athenaDbDir + "/item_trade.txt")]);
+	}
+
+	explainParamByLine(line: AthenaDBLine, paramIdx: number, html : boolean) : string {
+		let paramVal = line.getParamByIndex(paramIdx);
+		if ( !paramVal )
+			return "";
+
+		if ( paramIdx == AthenaItemTradeDBColumns.ItemId ) {
+			paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine, html);
+		} else if ( paramIdx == AthenaItemTradeDBColumns.TradeMask ) {
+			paramVal = explainBinMaskEnumParam(paramVal, is_rAthena ? rAthenaItemTradeDBTradeMask : AthenaItemTradeDBTradeMask);
+		}
+		return super.explainParamByLineSub(line, paramIdx, paramVal, html);
+	}
+
+	getParamDocumentation(paramIdx: number): string | undefined {
+		if ( paramIdx == AthenaItemTradeDBColumns.TradeMask )
+			return this.enumToParamDocumentation(is_rAthena ? rAthenaItemTradeDBTradeMask : AthenaItemTradeDBTradeMask, 0); 
 	}
 }
 
@@ -506,6 +639,30 @@ enum EQP {
 	ACC_R_COSTUME		= 0x00200000,
 };
 
+enum IT_rA {
+	HEALING = 0,				//IT_HEAL				= 0x00
+	UNKNOWN, //1				//IT_SCHANGE			= 0x01
+	USABLE,  //2				//IT_SPECIAL			= 0x02
+	ETC,     //3				//IT_EVENT				= 0x03
+	WEAPON,  //4				//IT_ARMOR				= 0x04
+	ARMOR,   //5				//IT_WEAPON				= 0x05
+	CARD,    //6				//IT_CARD				= 0x06
+	PETEGG,  //7				//IT_QUEST				= 0x07
+	PETARMOR,//8				//IT_BOW				= 0x08
+	UNKNOWN2,//9				//IT_BOTHHAND			= 0x09
+	AMMO,    //10			//IT_ARROW				= 0x0a
+	DELAYCONSUME,//11		//IT_ARMORTM			= 0x0b
+	SHADOWGEAR,//12			//IT_ARMORTB			= 0x0c
+							//IT_ARMORMB			= 0x0d
+							//IT_ARMORTMB			= 0x0e
+							//IT_GUN				= 0x0f
+							//IT_AMMO				= 0x10
+	THROWWEAPON = 17,		//IT_THROWWEAPON		= 0x11
+	CASH,					//IT_CASH_POINT_ITEM	= 0x12
+	CANNONBALL,				//IT_CANNONBALL			= 0x13
+	MAX 
+};
+
 enum IT {
 	HEALING = 0,				//IT_HEAL				= 0x00
 	UNKNOWN, //1				//IT_SCHANGE			= 0x01
@@ -529,6 +686,10 @@ enum IT {
 	CANNONBALL,				//IT_CANNONBALL			= 0x13
 	MAX 
 };
+
+function getITEnumType() {
+	return is_rAthena ? IT_rA : IT;
+}
 
 enum JOB {
 	NOVICE,
@@ -874,6 +1035,41 @@ enum item_jobmask {
 	SUMMONER	= 1 << 31,
 }
 
+enum item_jobmask_rA {
+	Novice    	   = 0x00000001,
+	Swordman       = 0x00000002,
+	Magician       = 0x00000004,
+	Archer         = 0x00000008,
+	Acolyte        = 0x00000010,
+	Merchant       = 0x00000020,
+	Thief          = 0x00000040,
+	Knight         = 0x00000080,
+	Priest         = 0x00000100,
+	Wizard         = 0x00000200,
+	Blacksmith     = 0x00000400,
+	Hunter         = 0x00000800,
+	Assassin       = 0x00001000,
+	//Unused         = 0x00002000,
+	Crusader       = 0x00004000,
+	Monk           = 0x00008000,
+	Sage           = 0x00010000,
+	Rogue          = 0x00020000,
+	Alchemist      = 0x00040000,
+	BardDancer    = 0x00080000,
+	//Unused         = 0x00100000,
+	Taekwon        = 0x00200000,
+	StarGladiator = 0x00400000,
+	SoulLinker    = 0x00800000,
+	Gunslinger     = 0x01000000,
+	Ninja          = 0x02000000,
+	Gangsi         = 0x04000000,
+	DeathKnight   = 0x08000000,
+	DarkCollector = 0x10000000,
+	KagerouOboro  = 0x20000000,
+	Rebellion      = 0x40000000,
+	Summoner       = 0x80000000,
+}
+
 enum weapon_type {
 	FIST,	//Bare hands
 	DAGGER,	//1
@@ -910,21 +1106,23 @@ enum weapon_type {
 };
 
 enum MD {
-	CANMOVE            = 0x0001,
-	LOOTER             = 0x0002,
-	AGGRESSIVE         = 0x0004,
-	ASSIST             = 0x0008,
-	CASTSENSOR_IDLE    = 0x0010,
-	BOSS               = 0x0020,
-	PLANT              = 0x0040,
-	CANATTACK          = 0x0080,
-	DETECTOR           = 0x0100,
-	CASTSENSOR_CHASE   = 0x0200,
-	CHANGECHASE        = 0x0400,
-	ANGRY              = 0x0800,
-	CHANGETARGET_MELEE = 0x1000,
-	CHANGETARGET_CHASE = 0x2000,
-	TARGETWEAK         = 0x4000,
+	CANMOVE            = 0x00001,
+	LOOTER             = 0x00002,
+	AGGRESSIVE         = 0x00004,
+	ASSIST             = 0x00008,
+	CASTSENSOR_IDLE    = 0x00010,
+	BOSS               = 0x00020,
+	PLANT              = 0x00040,
+	CANATTACK          = 0x00080,
+	DETECTOR           = 0x00100,
+	CASTSENSOR_CHASE   = 0x00200,
+	CHANGECHASE        = 0x00400,
+	ANGRY              = 0x00800,
+	CHANGETARGET_MELEE = 0x01000,
+	CHANGETARGET_CHASE = 0x02000,
+	TARGETWEAK         = 0x04000,
+	PHYSICAL_IMMUNE    = 0x10000,
+	MAGICAL_IMMUNE     = 0x20000,
 }
 
 enum RC {
@@ -943,6 +1141,22 @@ enum RC {
 	NONDEMIHUMAN,
 	MAX
 };
+
+enum RC_rA {
+	FORMLESS = 0,
+	UNDEAD,
+	BRUTE,
+	PLANT,
+	INSECT,
+	FISH,
+	DEMON,
+	DEMIHUMAN,
+	ANGEL,
+	DRAGON,
+	PLAYER,
+	ALL
+}
+
 
 enum UNIT_SIZE {
 	SMALL,
@@ -976,6 +1190,92 @@ enum item_upper {
 };
 
 
+enum emotion_type
+{
+	E_GASP = 0,     // /!
+	E_WHAT,         // /?
+	E_HO,
+	E_LV,
+	E_SWT,
+	E_IC,
+	E_AN,
+	E_AG,
+	E_CASH,         // /$
+	E_DOTS,         // /...
+	E_SCISSORS,     // /gawi --- 10
+	E_ROCK,         // /bawi
+	E_PAPER,        // /bo
+	E_KOREA,
+	E_LV2,
+	E_THX,
+	E_WAH,
+	E_SRY,
+	E_HEH,
+	E_SWT2,
+	E_HMM,          // --- 20
+	E_NO1,
+	E_NO,           // /??
+	E_OMG,
+	E_OH,
+	E_X,
+	E_HLP,
+	E_GO,
+	E_SOB,
+	E_GG,
+	E_KIS,          // --- 30
+	E_KIS2,
+	E_PIF,
+	E_OK,
+	E_MUTE,         // red /... used for muted characters
+	E_INDONESIA,
+	E_BZZ,          // /bzz, /stare
+	E_RICE,
+	E_AWSM,         // /awsm, /cool
+	E_MEH,
+	E_SHY,          // --- 40
+	E_PAT,          // /pat, /goodboy
+	E_MP,           // /mp, /sptime
+	E_SLUR,
+	E_COM,          // /com, /comeon
+	E_YAWN,         // /yawn, /sleepy
+	E_GRAT,         // /grat, /congrats
+	E_HP,           // /hp, /hptime
+	E_PHILIPPINES,
+	E_MALAYSIA,
+	E_SINGAPORE,    // --- 50
+	E_BRAZIL,
+	E_FLASH,        // /fsh
+	E_SPIN,         // /spin
+	E_SIGH,
+	E_PROUD,        // /dum
+	E_LOUD,         // /crwd
+	E_OHNOES,       // /desp, /otl
+	E_DICE1,
+	E_DICE2,
+	E_DICE3,        // --- 60
+	E_DICE4,
+	E_DICE5,
+	E_DICE6,
+	E_INDIA,
+	E_LOOSER,
+	E_RUSSIA,
+	E_VIRGIN,
+	E_PHONE,
+	E_MAIL,
+	E_CHINESE,      // --- 70
+	E_SIGNAL,
+	E_SIGNAL2,
+	E_SIGNAL3,
+	E_HUM,
+	E_ABS,
+	E_OOPS,
+	E_SPIT,
+	E_ENE,
+	E_PANIC,
+	E_WHISP,        // --- 80
+	//
+	E_MAX
+};
 
 function getEnumMemberNameByValue(iParamVal : number, typeEnum : any) {
 	for ( let member in typeEnum ) {
@@ -1020,7 +1320,7 @@ function explainBinMaskEnumParam(paramVal : string,  typeEnum : any) : string {
 }
 
 
-function explainItemIdParam(paramVal : string, full : boolean) : string {
+function explainItemIdParam(paramVal : string, full : boolean, html : boolean) : string {
 	let iParamVal = parseInt(paramVal);
 	if ( iParamVal < 1 )
 		return paramVal;
@@ -1028,13 +1328,19 @@ function explainItemIdParam(paramVal : string, full : boolean) : string {
 	let itemDbLine = itemDB.idToDbLine.get(parseInt(paramVal));
 	if ( itemDbLine ) {
 		if ( !full ) {
-			if ( AthenaItemDB.aegisNameParamIndex < itemDbLine.params.length )
-				paramVal += " " + itemDbLine.params[AthenaItemDB.aegisNameParamIndex];
+			if ( itemDbParamIndex.AegisName < itemDbLine.params.length )
+				paramVal += " " + itemDbLine.params[itemDbParamIndex.AegisName];
 			let imageURL = itemImageURL ? itemImageURL.replace("ITEMID", iParamVal.toString()) : iParamVal.toString();
-			paramVal = makeMarkdownLinkWithImage(itemDbLine, imageURL, 18, 18) + " " + paramVal;
+			if ( html )
+				paramVal = "<img src=\""+ imageURL +"\">"+ paramVal;
+			else
+				paramVal = makeMarkdownLinkWithImage(itemDbLine, imageURL, 18, 18) + " " + paramVal;
 		} else {
-			paramVal += "  \n*ItemDB*  \n";
-			paramVal += itemDB.explainLine(itemDbLine);
+			if ( html )
+				paramVal += "<br><br>ItemDB<br>";
+			else
+				paramVal += "   \n___  \n";
+			paramVal += itemDB.explainLine(itemDbLine, html);
 		}
 	}
 	return paramVal;
@@ -1046,7 +1352,7 @@ function isFullyNumericString(str : string) : boolean
 	return i.toString() == str;
 }
 
-function explainSkillIdOrTechNameParam(paramVal : string) {
+function explainSkillIdOrTechNameParam(paramVal : string, html : boolean) {
 	let dbLine;
 	let appendTechName = false;
 	if ( isFullyNumericString(paramVal) ) {
@@ -1064,7 +1370,11 @@ function explainSkillIdOrTechNameParam(paramVal : string) {
 		return paramVal;
 
 	let url = skillImageURL ? skillImageURL.replace("SKILLID", skillId.toString()).replace("SKILLNAME", techName.toLowerCase().toString()) : "";
-	let ret = makeMarkdownLinkWithImage(dbLine, url, 18, 18) + " " + paramVal;
+	let ret;
+	if ( html )
+		ret = "<img src=\""+url+"\">" + paramVal;
+	else
+		ret = makeMarkdownLinkWithImage(dbLine, url, 18, 18) + " " + paramVal;
 	if ( appendTechName )
 		ret += " (" + dbLine.getParamByIndex(skillDB.nameIndex) + ")";
 	return ret;	
@@ -1128,102 +1438,293 @@ function loadConstDB(filePath : string, hppFilePath? : string) {
 }	
 
 
-class AthenaItemDB extends AthenaDB {
-	static itemIdParamIndex = 0;
-	static aegisNameParamIndex = 1;
-	static engNameParamIndex = 2;
-	static rusNameParamIndex = 3;
+class ItemDBParamIndex {
+	n = 0;
+	readonly ID = this.n++;
+	readonly AegisName = this.n++;
+	readonly Name = this.n++;
+	readonly RusName = is_rAthena ? undefined : this.n++;
+	readonly Type = this.n++;
+	readonly Buy = this.n++;
+	readonly Sell = this.n++;
+	readonly Weight = this.n++;
+	readonly ATK = this.n++;
+	readonly MATK = is_rAthena ? undefined : this.n++;
+	readonly DEF = this.n++;
+	readonly Range = this.n++;
+	readonly Slots = this.n++;
+	readonly Job = this.n++;
+	readonly Upper = this.n++;
+	readonly Gender = this.n++;
+	readonly Loc = this.n++;
+	readonly wLV = this.n++;
+	readonly eLV = this.n++;
+	readonly Refineable = this.n++;
+	readonly View = this.n++;
+	readonly Script = this.n++;
+	readonly OnEquip_Script = this.n++;
+	readonly OnUnequip_Script = this.n++;
 
+	visibleName() : number {
+		return (!is_rAthena && this.RusName !== undefined ) ? this.RusName : this.Name;
+	}
+}
+let itemDbParamIndex : ItemDBParamIndex;
+
+class AthenaItemDB extends AthenaDB {
 	constructor(filePaths : string[]) {
 		super(filePaths);
 	}
 
-	explainParamByLine(line : AthenaDBLine, paramIdx : number) {
-		const paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
+	explainParamByLine(line : AthenaDBLine, paramIdx : number, html : boolean) {
 		let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
 
-		if ( paramName == "ID" || paramName == "// ID" )
-			paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine);	
-		else if ( paramName == "Loc" )
-			paramVal = explainBinMaskEnumParam(paramVal, EQP);
-		else if ( paramName == "Type" )
-			paramVal = explainEnumParam(paramVal, IT);
-		else if ( paramName == "Job" )
-			paramVal = explainBinMaskEnumParam(paramVal, item_jobmask);
-		else if ( paramName == "Weight") {
-			paramVal = "" + (parseInt(paramVal) / 10);
-		} else if ( paramName == "View" ) {
-			let typeIdx = -1;
-			for ( let i = 0; i < this.paramNames.length; i++ )
-				if ( this.paramNames[i] == "Type" ) {
-					typeIdx = i;
-					break;
-				}
-			if ( typeIdx != -1 && line.params.length >= typeIdx && parseInt(line.params[typeIdx]) == IT.WEAPON )
-				paramVal = explainEnumParam(paramVal, weapon_type);
+		switch ( paramIdx ) {
+			case itemDbParamIndex.ID:
+				paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine, html);
+				break;
+			case itemDbParamIndex.Loc:
+				paramVal = explainBinMaskEnumParam(paramVal, EQP);
+				break;
+			case itemDbParamIndex.Type:
+				paramVal = explainEnumParam(paramVal, getITEnumType());
+				break;
+			case itemDbParamIndex.Job:
+				paramVal = explainBinMaskEnumParam(paramVal, is_rAthena ? item_jobmask_rA : item_jobmask);
+				break;
+			case itemDbParamIndex.Weight:
+				paramVal = (parseInt(paramVal) / 10).toString();
+				break;
+			case itemDbParamIndex.View:
+				if ( line.getIntParamByIndex(itemDbParamIndex.Type) == getITEnumType().WEAPON )
+					paramVal = explainEnumParam(paramVal, weapon_type);
+				break;
+			case itemDbParamIndex.Upper:
+				paramVal = explainBinMaskEnumParam(paramVal, item_upper);
+				break;
+			case itemDbParamIndex.Script:
+			case itemDbParamIndex.OnEquip_Script:
+			case itemDbParamIndex.OnUnequip_Script:
+				let formattedScript = this.formatScript(paramVal);
+				if ( html )
+					paramVal = "<pre>" + formattedScript.replace(/\n/g, "<br>") + "</pre>";
+				else
+					paramVal = new vscode.MarkdownString().appendCodeblock(formattedScript, languageIdLowerCase).value;	// languageId eAthena with capital "A" doesn't work in this case for some reason
+				break;
 		}
-		else if ( paramName == "Upper" )
-			paramVal = explainBinMaskEnumParam(paramVal, item_upper);
-		return super.explainParamByLineSub(line, paramIdx, paramVal);
+
+		return super.explainParamByLineSub(line, paramIdx, paramVal, html);
 	}
 
-	getParamDocumentation(paramName : string) : string|undefined {
-		if ( paramName == "Loc" )
-			return this.enumToParamDocumentation(EQP, 2);
-		else if ( paramName == "Type" )
-			return this.enumToParamDocumentation(IT, 0);
-		else if ( paramName == "Job" )
-			return this.enumToParamDocumentation(item_jobmask, 1);
-		else if ( paramName == "View" )
-			return "For hats: accessoryId, for weapons:  \n" + this.enumToParamDocumentation(weapon_type, 0);
-		else if ( paramName == "Upper" )
-			return this.enumToParamDocumentation(item_upper, 1);
-
+	getParamDocumentation(paramIdx : number) : string|undefined {
+		switch ( paramIdx ) {
+			case itemDbParamIndex.Loc:
+				return this.enumToParamDocumentation(EQP, 2);
+			case itemDbParamIndex.Type:
+				return this.enumToParamDocumentation(getITEnumType(), 0);
+			case itemDbParamIndex.Job:
+				return this.enumToParamDocumentation(is_rAthena ? item_jobmask_rA : item_jobmask, 1);
+			case itemDbParamIndex.View:
+				return "For hats: accessoryId, for weapons:  \n" + this.enumToParamDocumentation(weapon_type, 0);
+			case itemDbParamIndex.Upper:
+				return this.enumToParamDocumentation(item_upper, 1);
+		}
 		return undefined;
 	}
 
 
 	getSymbolLabelForLine(l : AthenaDBLine) : string|undefined {
-		let id = l.getParamByIndex(AthenaItemDB.itemIdParamIndex);
-		let aegisName = l.getParamByIndex(AthenaItemDB.aegisNameParamIndex);
-		let engName = l.getParamByIndex(AthenaItemDB.engNameParamIndex);
-		let rusName = l.getParamByIndex(AthenaItemDB.rusNameParamIndex);
+		let id = l.getParamByIndex(itemDbParamIndex.ID);
+		let aegisName = l.getParamByIndex(itemDbParamIndex.AegisName);
+		let engName = l.getParamByIndex(itemDbParamIndex.Name);
+		let rusName = itemDbParamIndex.RusName ? l.getParamByIndex(itemDbParamIndex.RusName) : undefined;
 
-		if ( !id || !aegisName || !engName || !rusName )
+		if ( !id || !aegisName || !engName)
 			return undefined;
-		return id + ":" + aegisName + ":" + engName + ":" + rusName;
+		let ret = id + ":" + aegisName + ":" + engName;
+		if ( rusName )
+			ret += ":" + rusName;
+		return ret;
+	}
+
+	explainLine(line: AthenaDBLine, html : boolean, cursorPosition? : vscode.Position) : string {
+		let ret = super.explainLine(line, html, cursorPosition);
+		let itemId = line.getIntParamByIndex(itemDbParamIndex.ID);
+		if ( itemId ) {
+			let itemTradeLine = itemTradeDB.idToDbLine.get(itemId);
+			if ( itemTradeLine ) {
+				let tradeRestrictions = itemTradeDB.explainParamByLine(itemTradeLine, AthenaItemTradeDBColumns.TradeMask, html);
+				if ( tradeRestrictions )
+					ret += (html ? "<br>" : "  \n") + tradeRestrictions;
+			}
+		}
+
+		return ret;
+	}
+
+	formatScript(script : string) : string {
+		if ( script.startsWith("{") && script.endsWith("}") )
+			script = script.substring(1, script.length-1);
+
+		let formattedScript = "";
+		let indent = 0;
+
+		let i = 0;
+		// skip whitespace at start
+		for ( i = 0; i < script.length; i++ )
+			if (!isWhitespace(script.charAt(i)))
+				break;
+
+		for ( ; i < script.length; i++ ) {
+			let c = script.charAt(i);
+			
+			if ( c == "{" ) {
+				indent++;
+				formattedScript += "{\n" + "\t".repeat(indent);
+				// skip whitespace
+				i++;
+				for ( ; i < script.length; i++ )
+					if ( !isWhitespace(script.charAt(i)) )
+						break;
+				i--;
+			} else if ( c == "}" ) {
+				indent--;
+				if ( indent < 0 )
+					indent = 0;
+				if ( formattedScript.charAt(formattedScript.length-1) == "\t" )
+					formattedScript = formattedScript.substr(0, formattedScript.length-1); // crop last tab to reduce indent
+				formattedScript += "}" + "\n" + "\t".repeat(indent);
+				// skip whitespace
+				i++;
+				for ( ; i < script.length; i++ )
+					if ( !isWhitespace(script.charAt(i)) )
+						break;
+				i--;
+			} else if ( c == ";" ) {
+				formattedScript += ";\n" + "\t".repeat(indent);
+				// skip whitespace
+				i++;
+				for ( ; i < script.length; i++ )
+					if ( !isWhitespace(script.charAt(i)) )
+						break;
+				i--;
+			} else if ( c == "\"" ) {
+				formattedScript += c;
+				i++;
+				for ( ; i < script.length; i++ ) {
+					formattedScript += script.charAt(i);
+					if ( script.charAt(i) == "\"" && script.charAt(i-1) != "\\" )
+						break;
+				}
+			} else {
+				formattedScript += c;
+			}
+		}
+
+		formattedScript = formattedScript.trim();
+
+		return formattedScript;
 	}
 }
 
+class MobDBParamIndex {
+	n = 0;
+
+	readonly ID = this.n++;
+	readonly Sprite_Name = this.n++;
+	readonly kROName = this.n++;
+	readonly iROName = this.n++;
+	readonly RusName = is_rAthena ? undefined : this.n++;
+	readonly LV = this.n++;
+	readonly HP = this.n++;
+	readonly SP = this.n++;
+	readonly EXP = this.n++;
+	readonly JEXP = this.n++;
+	readonly Range1 = this.n++;
+	readonly ATK1 = this.n++;
+	readonly ATK2 = this.n++;
+	readonly DEF = this.n++;
+	readonly MDEF = this.n++;
+	readonly STR = this.n++;
+	readonly AGI = this.n++;
+	readonly VIT = this.n++;
+	readonly INT = this.n++;
+	readonly DEX = this.n++;
+	readonly LUK = this.n++;
+	readonly Range2 = this.n++;
+	readonly Range3 = this.n++;
+	readonly Scale = this.n++;
+	readonly Race = this.n++;
+	readonly Element = this.n++;
+	readonly Mode = this.n++;
+	readonly Speed = this.n++;
+	readonly aDelay = this.n++;
+	readonly aMotion = this.n++;
+	readonly dMotion = this.n++;
+	readonly MEXP = this.n++;
+	readonly MVP1id = this.n++;
+	readonly MVP1per = this.n++;
+	readonly MVP2id = this.n++;
+	readonly MVP2per = this.n++;
+	readonly MVP3id = this.n++;
+	readonly MVP3per = this.n++;
+	readonly Drop1id = this.n++;
+	readonly Drop1per = this.n++;
+	readonly Drop2id = this.n++;
+	readonly Drop2per = this.n++;
+	readonly Drop3id = this.n++;
+	readonly Drop3per = this.n++;
+	readonly Drop4id = this.n++;
+	readonly Drop4per = this.n++;
+	readonly Drop5id = this.n++;
+	readonly Drop5per = this.n++;
+	readonly Drop6id = this.n++;
+	readonly Drop6per = this.n++;
+	readonly Drop7id = this.n++;
+	readonly Drop7per = this.n++;
+	readonly Drop8id = this.n++;
+	readonly Drop8per = this.n++;
+	readonly Drop9id = this.n++;
+	readonly Drop9per = this.n++;
+	readonly DropCardid = this.n++;
+	readonly DropCardper = this.n++;
+
+	visibleName() {
+		return ( !is_rAthena && this.RusName !== undefined ) ? this.RusName : this.kROName;
+	}
+}
+
+let mobDbParamIndex : MobDBParamIndex;
+
+
 class AthenaMobDB extends AthenaDB {
-	static mobIdParamIndex = 0;
-	static spriteNameParamIndex = 1;
-	static kRONameParamIndex = 2;
-	static rusNameParamIndex = 4;
 
 	constructor(filePaths : string[]) {
-		super(filePaths, undefined, AthenaMobDB.mobIdParamIndex);
+		super(filePaths, undefined, mobDbParamIndex.ID);
 	}
 
-	explainParamByLine(line : AthenaDBLine, paramIdx : number) : string {
-		let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
+	explainParamByLine(line : AthenaDBLine, paramIdx : number, html : boolean) : string {
+		//let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
 		let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
 
 	
-		if ( paramName == "ID" ) {
+		if ( paramIdx == mobDbParamIndex.ID ) {
 			let iParamVal = parseInt(paramVal);
 			if ( iParamVal > 0 ) {
 				let mobDbLine = mobDB.idToDbLine.get(parseInt(paramVal));
 				if ( mobDbLine ) {
-					if ( AthenaMobDB.spriteNameParamIndex < mobDbLine.params.length )
-						paramVal += " (" + mobDbLine.params[AthenaMobDB.spriteNameParamIndex] + ")";
+					if ( mobDbParamIndex.Sprite_Name < mobDbLine.params.length )
+						paramVal += " (" + mobDbLine.params[mobDbParamIndex.Sprite_Name] + ")";
 					let url = mobImageURL ? mobImageURL.replace("MOBID", iParamVal.toString()) : "";
-					paramVal = makeMarkdownLinkWithImage(mobDbLine, url, 32, 32) + " " + paramVal;
+					if ( html )
+						paramVal = "<img src=\""+ url +"\">" + paramVal;
+					else
+						paramVal = makeMarkdownLinkWithImage(mobDbLine, url, 32, 32) + " " + paramVal;
 				}
 			}
-		} else if ( paramName == "Mode" )
+		} else if ( paramIdx == mobDbParamIndex.Mode )
 			paramVal = explainBinMaskEnumParam(paramVal, MD);
-		else if ( paramName == "Element" ) {
+		else if ( paramIdx == mobDbParamIndex.Element ) {
 			let iParamVal = parseInt(paramVal);
 			let eleLv = Math.floor(iParamVal / 20);
 			let eleNum = iParamVal % 10;
@@ -1231,46 +1732,77 @@ class AthenaMobDB extends AthenaDB {
 			if ( paramExplanation )
 				paramVal += " (" + paramExplanation + " "+ eleLv +")";
 		}
-		else if ( paramName == "Race" )
-			paramVal = explainEnumParam(paramVal, RC);
-		else if ( paramName == "Scale" )
+		else if ( paramIdx == mobDbParamIndex.Race )
+			paramVal = explainEnumParam(paramVal, is_rAthena ? RC_rA : RC);
+		else if ( paramIdx == mobDbParamIndex.Scale )
 			paramVal = explainEnumParam(paramVal, UNIT_SIZE);
-		else if ( paramName.match("Drop[1-9]id") || paramName.match("MVP[1-9]id") || paramName == "DropCardid" ) {
-			paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine);
-		} else if ( paramName.match("Drop[1-9]per") || paramName.match("MVP[1-9]per") || paramName == "DropCardper" ) {
+		else if (  paramIdx == mobDbParamIndex.Drop1id
+				|| paramIdx == mobDbParamIndex.Drop2id
+				|| paramIdx == mobDbParamIndex.Drop3id
+				|| paramIdx == mobDbParamIndex.Drop4id
+				|| paramIdx == mobDbParamIndex.Drop5id
+				|| paramIdx == mobDbParamIndex.Drop6id
+				|| paramIdx == mobDbParamIndex.Drop7id
+				|| paramIdx == mobDbParamIndex.Drop8id
+				|| paramIdx == mobDbParamIndex.Drop9id
+				|| paramIdx == mobDbParamIndex.DropCardid
+				|| paramIdx == mobDbParamIndex.MVP1id
+				|| paramIdx == mobDbParamIndex.MVP2id
+				|| paramIdx == mobDbParamIndex.MVP3id ) 
+		{
+			paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine, html);
+		} else if (  paramIdx == mobDbParamIndex.Drop1per
+				  || paramIdx == mobDbParamIndex.Drop2per
+				  || paramIdx == mobDbParamIndex.Drop3per
+				  || paramIdx == mobDbParamIndex.Drop4per
+				  || paramIdx == mobDbParamIndex.Drop5per
+				  || paramIdx == mobDbParamIndex.Drop6per
+				  || paramIdx == mobDbParamIndex.Drop7per
+				  || paramIdx == mobDbParamIndex.Drop8per
+				  || paramIdx == mobDbParamIndex.Drop9per
+				  || paramIdx == mobDbParamIndex.DropCardper
+				  || paramIdx == mobDbParamIndex.MVP1per
+				  || paramIdx == mobDbParamIndex.MVP2per
+				  || paramIdx == mobDbParamIndex.MVP3per )
+		{
 			let iVal = parseInt(paramVal);
 			let iValDiv = iVal / 100;
 			paramVal = iValDiv + "%"; 
 		}
 		
-		return super.explainParamByLineSub(line, paramIdx, paramVal);
+		return super.explainParamByLineSub(line, paramIdx, paramVal, html);
 	}
 
-	getParamDocumentation(paramName : string) : string|undefined {
-		if ( paramName == "Mode" )
+	getParamDocumentation(paramIdx : number) : string|undefined {
+		//let paramName = this.paramNames[paramIdx];
+		if ( paramIdx == mobDbParamIndex.Mode )
 			return this.enumToParamDocumentation(MD, 1);
-		else if ( paramName == "Element" )
+		else if ( paramIdx == mobDbParamIndex.Element )
 			return "ElementLv: value / 20  \nElementType: value % 10  \nTypes:  \n" + this.enumToParamDocumentation(ELE, 0);
-		else if ( paramName == "Race" )
-			return this.enumToParamDocumentation(RC, 0);
-		else if ( paramName == "Scale" )
+		else if ( paramIdx == mobDbParamIndex.Race )
+			return this.enumToParamDocumentation(is_rAthena ? RC_rA : RC, 0);
+		else if ( paramIdx == mobDbParamIndex.Scale )
 			return this.enumToParamDocumentation(UNIT_SIZE, 0);
 	
 		return undefined;
 	}
 
 	getSymbolLabelForLine(l : AthenaDBLine) : string|undefined {
-		let id = l.getParamByIndex(AthenaMobDB.mobIdParamIndex);
-		let spriteName = l.getParamByIndex(AthenaMobDB.spriteNameParamIndex);
-		let kROName = l.getParamByIndex(AthenaMobDB.kRONameParamIndex);
-		let rusName = l.getParamByIndex(AthenaMobDB.rusNameParamIndex);
+		let id = l.getParamByIndex(mobDbParamIndex.ID);
+		let spriteName = l.getParamByIndex(mobDbParamIndex.Sprite_Name);
+		let kROName = l.getParamByIndex(mobDbParamIndex.kROName);
 
-		if ( !id || !spriteName || !kROName || !rusName )
+		if ( !id || !spriteName || !kROName )
 			return undefined;
-		return id + ":" + spriteName + ":" + kROName + ":" + rusName;
+
+		let rusName = mobDbParamIndex.RusName ? l.getParamByIndex(mobDbParamIndex.RusName) : undefined;
+		let ret = id + ":" + spriteName + ":" + kROName;
+		if ( rusName )
+			ret += ":" + rusName;
+		return ret;
 	}
 
-	explainLine(line: AthenaDBLine): string {
+	explainLine(line: AthenaDBLine, html : boolean, cursorPosition? : vscode.Position): string {
 		let addExplanation = "";
 		let mobIdStr = line.getParamByIndex(this.keyIndex);
 		if ( mobIdStr ) {
@@ -1279,22 +1811,29 @@ class AthenaMobDB extends AthenaDB {
 				let mobSkills = mobSkillDB.mobidToSkillList.get(mobId);
 				if ( mobSkills && mobSkills.length > 0 ) {
 					mobSkills.forEach(l => {
-						let skillId = l.getParamByIndex(AthenaMobSkillDB.skillIdParamIdx);
-						if ( skillId )
-							addExplanation += "  \n" + makeMarkdownLink("Skill", l.filePath, l.lineNum) + " : " + explainSkillIdOrTechNameParam(skillId) + "  \n";
+						let skillId = l.getParamByIndex(mobSkillDBParamIndex.skillId);
+						if ( skillId ) {
+							let skillIdExplanation = explainSkillIdOrTechNameParam(skillId, html);
+							let mobSkillDbLineShort = mobSkillDB.explainLineShort(l);
+
+							if ( html )
+								addExplanation += "<br>" + "Skill: " + skillIdExplanation + "<br>" + mobSkillDbLineShort + "<br>";
+							else
+								addExplanation += "  \n" + makeMarkdownLink("Skill", l.filePath, l.lineNum) + " : " + skillIdExplanation + "  \n" + mobSkillDbLineShort + "  \n";
+						}
 					});
 				}
 			}
 		}
-		return super.explainLine(line) + addExplanation;
+		return super.explainLine(line, html, cursorPosition) + addExplanation;
 	}
 }
 
 
 
+
+
 class AthenaMobSkillDB extends AthenaDB {
-	static dummyNameParamIdx = 1;
-	static skillIdParamIdx = 3;
 
 	static possibleTargets = [
 		["target"],
@@ -1355,7 +1894,7 @@ class AthenaMobSkillDB extends AthenaDB {
 		super(fileNames, undefined, 999, 999);
 	}
 
-	explainParamByLine(line: AthenaDBLine, paramIdx: number): string {
+	explainParamByLine(line: AthenaDBLine, paramIdx: number, html : boolean): string {
 		//MOB_ID,dummy value (info only),STATE,SKILL_ID,SKILL_LV,rate (10000 = 100%),casttime,delay,cancelable,target,condition type,condition value,val1,val2,val3,val4,val5,emotion,chat{,increaseRange,castbegin_script,castend_script}
 		let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
 		let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
@@ -1365,17 +1904,17 @@ class AthenaMobSkillDB extends AthenaDB {
 			if ( iVal > 0 ) {
 				let mobDbLine = mobDB.idToDbLine.get(iVal);
 				if ( mobDbLine )
-					paramVal += " (" + mobDbLine.getParamByIndex(AthenaMobDB.spriteNameParamIndex) + ")";// "*Mob DB*  \n" + mobDB.explainLine(mobDbLine);
+					paramVal += "   \n___  \n" + mobDB.explainLine(mobDbLine, html);
 			}
 		} else if ( paramName == "SKILL_ID" ) {
-			paramVal = explainSkillIdOrTechNameParam(paramVal);
+			paramVal = explainSkillIdOrTechNameParam(paramVal, html);
 		} else if ( paramName == "rate (10000 = 100%)" ) {
 			paramVal = parseInt(paramVal) / 100 + " %";
 		} else if ( paramName == "casttime" || paramName == "delay" )
 			paramVal = millisecondsToHumanReadableString(parseInt(paramVal));
 		else if ( paramName == "dummy value (info only)" ) {
 			if ( !this.alreadyExplainingLine ) {
-				paramVal = this.explainLine(line);
+				paramVal = this.explainLine(line, html);
 			}
 		}
 		else if ( paramName == "target" )
@@ -1384,7 +1923,16 @@ class AthenaMobSkillDB extends AthenaDB {
 			paramVal = this.getExplanationByArray(paramVal, AthenaMobSkillDB.possibleStates);
 		else if ( paramName == "condition type" )
 			paramVal = this.getExplanationByArray(paramVal, AthenaMobSkillDB.possibleConditions);
-		return this.explainParamByLineSub(line, paramIdx, paramVal);
+		else if ( paramName == "condition value" ) {
+			let condTypeParamIdx = this.getParamIndex("condition type");
+			if ( condTypeParamIdx !== undefined ) {
+				let condTypeVal = line.getParamByIndex(condTypeParamIdx);
+				if ( condTypeVal == "skillused" || condTypeVal == "afterskill" )
+					paramVal = explainSkillIdOrTechNameParam(paramVal, html);
+			}
+		} else if ( paramName == "emotion" )
+			paramVal = explainEnumParam(paramVal, emotion_type);
+		return this.explainParamByLineSub(line, paramIdx, paramVal, html);
 	}
 
 	getExplanationByArray(paramVal : string, array : Array<string[]>) : string {
@@ -1410,7 +1958,9 @@ class AthenaMobSkillDB extends AthenaDB {
 	}
 
 
-	getParamDocumentation(paramName: string) : string|undefined {
+	getParamDocumentation(paramIdx: number) : string|undefined {
+		let paramName = this.paramNames[paramIdx];
+
 		if ( paramName == "target" ) {
 			return this.getDocumentationByArray(AthenaMobSkillDB.possibleTargets);
 		} else if ( paramName == "STATE" ) {
@@ -1442,7 +1992,73 @@ class AthenaMobSkillDB extends AthenaDB {
 		});
 	}
 
+
+
+	explainLineShort(dbLine : AthenaDBLine) : string
+	{
+		let p = mobSkillDBParamIndex;
+
+		//MOB_ID,dummy value (info only),STATE,SKILL_ID,SKILL_LV,rate (10000 = 100%),casttime,delay,cancelable,target,condition type,condition value,val1,val2,val3,val4,val5,emotion,chat{,increaseRange,castbegin_script,castend_script}
+		//let skillId = dbLine.getIntParamByIndex(p.skillId);
+		let skillLv = dbLine.getIntParamByIndex(p.skillLv);
+		let state = dbLine.getParamByIndex(p.state);
+		let rate = dbLine.getIntParamByIndex(p.rate) || 0;
+		let casttime = dbLine.getIntParamByIndex(p.casttime) || 0;
+		let delay = dbLine.getIntParamByIndex(p.delay) || 0;
+		let target = dbLine.getParamByIndex(p.target);
+		let condtype = dbLine.getParamByIndex(p.conditionType);
+		let condVal = dbLine.getIntParamByIndex(p.conditionValue) || 0;
+		let val1 = dbLine.getIntParamByIndex(p.val1);
+		let val2 = dbLine.getIntParamByIndex(p.val2);
+		let val3 = dbLine.getIntParamByIndex(p.val3);
+		let val4 = dbLine.getIntParamByIndex(p.val4);
+		let val5 = dbLine.getIntParamByIndex(p.val5);
+
+		return "Lv" + skillLv + " " 
+			+ ( rate ? rate / 100.0 : 0 ) + "% " 
+			+ state + " "
+			+ (casttime ? "ct:" + millisecondsToHumanReadableString(casttime) + " " : "" )
+			+ (delay ? "cd:" + millisecondsToHumanReadableString(delay) + " " : "" )
+			+ target + " "
+			+ condtype + " "
+			+ condVal + " "
+			+ (val1||"") + " "
+			+ (val2||"") + " "
+			+ (val3||"") + " "
+			+ (val4||"") + " "
+			+ (val5||"");
+	}
+	
 }
+class MobSkillDBParamIndex {
+	n = 0;
+	readonly mobId = this.n++;
+	readonly dummyName = this.n++;
+	readonly state = this.n++;
+	readonly skillId = this.n++;
+	readonly skillLv = this.n++;
+	readonly rate = this.n++;
+	readonly casttime = this.n++;
+	readonly delay = this.n++;
+	readonly cancelable = this.n++;
+	readonly target = this.n++;
+	readonly conditionType = this.n++;
+	readonly conditionValue = this.n++;
+	readonly val1 = this.n++;
+	readonly val2 = this.n++;
+	readonly val3 = this.n++;
+	readonly val4 = this.n++;
+	readonly val5 = this.n++;
+	readonly emotion = this.n++;
+	readonly chat = is_rAthena ? undefined : this.n++;
+	readonly increaseRange = is_rAthena ? undefined : this.n++;
+	readonly castBeginScript = is_rAthena ? undefined : this.n++;
+	readonly castEndScript = is_rAthena ? undefined : this.n++;
+
+	constructor() {}
+}
+
+let mobSkillDBParamIndex : MobSkillDBParamIndex;
 
 enum INF
 {
@@ -1490,17 +2106,48 @@ enum INF2
 };
 
 
+class SkillDBParamIndex {
+	n = 0;
+
+    readonly id = this.n++;
+	readonly range = this.n++;
+	readonly hit = this.n++;
+	readonly inf = this.n++;
+	readonly element = this.n++;
+	readonly nk = this.n++;
+	readonly splash = this.n++;
+	readonly max = this.n++;
+	readonly numberOfHits = this.n++;
+	readonly castCancel = this.n++;
+	readonly castDefenseRate = this.n++;
+	readonly inf2 = this.n++;
+	readonly maxCount = this.n++;
+	readonly skillType = this.n++;
+	readonly blowCount = this.n++;
+	readonly inf3 = is_rAthena ? this.n++ : undefined;
+	readonly techName = this.n++;
+	readonly visibleName = this.n++;
+	readonly rusName = !is_rAthena ? this.n++ : undefined;
+
+	defaultVisibleName() : number {
+		return (!is_rAthena && this.rusName !== undefined) ? this.rusName : this.visibleName;
+	}
+}
+
+let skillDbParamIndex : SkillDBParamIndex;
+
 class AthenaSkillDB extends AthenaDB {
 
+
 	constructor(fileName? : string) {
-		super(fileName ? [fileName] : [athenaDbDir + "/skill_db.txt"]);
+		super(fileName ? [fileName] : [athenaDbDir + "/skill_db.txt"], undefined, 0, skillDbParamIndex.techName);
 	}
 
-	explainParamByLine(line : AthenaDBLine, paramIdx : number) : string {
+	explainParamByLine(line : AthenaDBLine, paramIdx : number, html : boolean) : string {
 		let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
 		let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
 		if ( paramName == "name" || paramName == "id" ) {
-			paramVal = explainSkillIdOrTechNameParam(paramVal);
+			paramVal = explainSkillIdOrTechNameParam(paramVal, html);
 		}
 		else if ( paramName == "range" ) {
 			let iVal = parseInt(paramVal);
@@ -1546,11 +2193,12 @@ class AthenaSkillDB extends AthenaDB {
 		else if ( paramName == "inf2" )
 			paramVal = explainBinMaskEnumParam(paramVal, INF2);
 
-		return this.explainParamByLineSub(line, paramIdx, paramVal);
+		return this.explainParamByLineSub(line, paramIdx, paramVal, html);
 	}
 
 	
-	getParamDocumentation(paramName : string) : string | undefined {
+	getParamDocumentation(paramIdx : number) : string | undefined {
+		let paramName = this.paramNames[paramIdx];
 		if ( paramName == "inf" )
 			return this.enumToParamDocumentation(INF, 1);
 		else if ( paramName == "nk" )
@@ -1561,16 +2209,38 @@ class AthenaSkillDB extends AthenaDB {
 			return this.enumToParamDocumentation(ELE, 0);
 	}
 
-	explainLine(line : AthenaDBLine) : string {
-		let result = super.explainLine(line);
+	explainLine(line : AthenaDBLine, html : boolean, cursorPosition? : vscode.Position) : string {
+		let result = super.explainLine(line, html, cursorPosition);
 		let skillId = parseInt(line.params[this.keyIndex]);
 		if ( skillId < 1 )
 			return result;
 		let skillCastDbLine = skillCastDB.idToDbLine.get(skillId);
 		if ( !skillCastDbLine )
 			return result;
-		result = "*Skill DB*  \n" + result + "  \n*Skill Cast DB*  \n" + skillCastDB.explainLine(skillCastDbLine);
+
+		let skillCastDbExplanation = skillCastDB.explainLine(skillCastDbLine, html);
+
+		if ( html )
+			result = "Skill DB<br>" + result + "<br>Skill Cast DB<br>" + skillCastDbExplanation;
+		else
+			result = result + "   \n___  \n" + skillCastDbExplanation;
 		return result;
+	}
+
+
+	getSymbolLabelForLine(l : AthenaDBLine) : string|undefined {
+		let skillId = l.getParamByIndex(skillDbParamIndex.id);
+		let techName = l.getParamByIndex(skillDbParamIndex.techName);
+		let visibleName = l.getParamByIndex(skillDbParamIndex.visibleName);
+		if ( skillDbParamIndex )
+
+		if ( !skillId || !techName || !visibleName )
+			return undefined;
+
+		let ret = skillId + ":" + techName + ":" + visibleName;
+		if ( skillDbParamIndex.rusName !== undefined )
+			ret += ":" + l.getParamByIndex(skillDbParamIndex.rusName);
+		return ret;
 	}
 
 }
@@ -1691,12 +2361,21 @@ function millisecondsToHumanReadableString(milliseconds : number)
 
 	if ( days )
 		timeStr += " " + days + "d";
-	if ( hours )
-		timeStr += " " + hours + "h";
-	if ( minutes )
-		timeStr += " " + minutes + "m";
-	if ( secondsAndMillis )
-		timeStr += " " + ( secondsAndMillis / 1000 ) + "s";
+	if ( hours ) {
+		// if ( timeStr.length > 0 )
+		// 	timeStr += " "
+		timeStr += hours + "h";
+	}
+	if ( minutes ) {
+		// if ( timeStr.length > 0 )
+		// 	timeStr += " "
+		timeStr += minutes + "m";
+	}
+	if ( secondsAndMillis ) {
+		// if ( timeStr.length > 0 )
+		// 	timeStr += " "
+		timeStr += ( secondsAndMillis / 1000 ) + "s";
+	}
 
 	return timeStr;
 }
@@ -1805,10 +2484,14 @@ function loadquestid2display(filePath :string) : Map<number,ClientQuest>|null
 	let fileContentBytes = fs.readFileSync(filePath);
 
 	// Replace comments with spaces
+	let slash = '/'.charCodeAt(0);
+	let nextLine = '\n'.charCodeAt(0);
+	let space = ' '.charCodeAt(0);
+
 	for ( let i = 0; i < fileContentBytes.length - 1; i++ )
-		if ( fileContentBytes[i] == '/' && fileContentBytes[i+1] == '/' )
-			while ( fileContentBytes[i] != '\n' && i < fileContentBytes.length )
-				fileContentBytes[i] = ' ';
+		if ( fileContentBytes[i] == slash && fileContentBytes[i+1] == slash )
+			while ( fileContentBytes[i] != nextLine && i < fileContentBytes.length )
+				fileContentBytes[i++] = space;
 	
 	let fileContent : string = iconv.decode(fileContentBytes, codepage);
 	
@@ -1866,18 +2549,18 @@ enum e_athena_exportsyntax {
 // tslint:disable: curly
 function readCompletionsArrayFromFile(filePath: string)
 {
-	var fileContent = fs.readFileSync(filePath);
-	var lines = fileContent.toString().split(/\r?\n/);
-	var myCompletions = new Array();
-	var i;
+	let fileContent = fs.readFileSync(filePath);
+	let lines = fileContent.toString().split(/\r?\n/);
+	let myCompletions = new Array();
+	let i;
 
 	for ( i = 0; i < lines.length; i++ ) {
-		var tokens = lines[i].split("\t");
+		let tokens = lines[i].split("\t");
 		if ( tokens.length < 2 )
 			continue;	// Invalid file format, should be at least type and label
 
 		const item = new vscode.CompletionItem(tokens[1]);
-		var type = parseInt(tokens[0]);
+		let type = parseInt(tokens[0]);
 		if ( type == e_athena_exportsyntax.MOB ) {
 			continue;
 		} else if ( type == e_athena_exportsyntax.ITEM ) {
@@ -2022,7 +2705,7 @@ class AthenaFunctionInfo {
 		for ( let i = 0; i < params.length; i++ ) {
 			let delim = params[i].indexOf(' ');
 			if ( delim != -1 )
-				this.params[i] = new AthenaFuncParam(trimString(params[i].substring(0, delim)), trimString(params[i].substring(delim, params[i].length)));
+				this.params[i] = new AthenaFuncParam(params[i].substring(0, delim).trim(), params[i].substring(delim, params[i].length).trim());
 			else
 				this.params[i] = new AthenaFuncParam("" , params[i]);
 		}
@@ -2045,8 +2728,6 @@ class AthenaFunctionInfo {
 }
 
 
-
-
 class AthenaDbCompletionItem extends vscode.CompletionItem {
 	db : AthenaDB;
 	dbLine : AthenaDBLine;
@@ -2060,10 +2741,12 @@ class AthenaDbCompletionItem extends vscode.CompletionItem {
 
 }
 
+
 function checkWordEnds(c : string)
 {
 	return wordSeparators.indexOf(c) != -1 || isWhitespace(c);
 }
+
 
 function findWordReferencesInFile(filePath : string, words : Array<string>) : Array<vscode.Location>
 {
@@ -2116,6 +2799,7 @@ function getDirectoryFileNamesRecursive(dirPath : string) : Array<string>
 	return ret;
 }
 
+
 function getFilesForFindReferences() : Array<string>
 {
 	let resultsDb = getDirectoryFileNamesRecursive(athenaDbDir);
@@ -2123,7 +2807,9 @@ function getFilesForFindReferences() : Array<string>
 	return resultsDb.concat(resultsNpc);
 }
 
+
 let filesForFindReferences = Array<string>();
+
 
 function findWordReferencesInAllFiles(words : Array<string>)
 {
@@ -2141,7 +2827,7 @@ function copySearchRegex()
 {
 	let activeEditor = vscode.window.activeTextEditor;//get_active_editor();
     if (!activeEditor)
-        return;
+		return;
     var activeDoc = activeEditor.document;// get_active_doc(active_editor);
     if (!activeDoc)
         return;
@@ -2160,6 +2846,21 @@ function copySearchRegex()
 
 function isDocumentAthenaDB(document : vscode.TextDocument) : boolean
 {
+	// Check auto-loaded DBs
+	let autoLoadedDatabases = getAutoLoadedDatabases();
+	let foundInAutoLoaded = autoLoadedDatabases.find(db => {
+		let dbFile = db.findFileByFilePath(document.fileName);
+		return dbFile != null;
+	});
+
+	if ( foundInAutoLoaded )
+		return true;
+
+	// Check cached mapping
+	if ( documentToAthenaDBFile.has(document) )
+		return true;
+
+	// Check file format 
 	if ( document.fileName.endsWith("_db.txt") 
 	|| document.fileName.endsWith("_db2.txt") 
 	|| formatFileName(document.fileName).includes(formatFileName(athenaDbDir)) ) 
@@ -2184,7 +2885,6 @@ function isDocumentAthenaDB(document : vscode.TextDocument) : boolean
 let itemBonusTxtPath : string;
 let questid2displaypath : string;
 
-
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -2193,12 +2893,12 @@ export function activate(context: vscode.ExtensionContext) {
 	const editorConf = vscode.workspace.getConfiguration("editor", null);
 	wordSeparators = editorConf.get<string>("wordSeparators") || "";
 
-	let conf = vscode.workspace.getConfiguration("eathena");
+	let conf = vscode.workspace.getConfiguration(languageIdLowerCase);
 
-	function getConfValOrThrow<T>(settingName : string, description : string) : T {
+	function getConfValOrThrow<T>(settingName : string, description? : string) : T {
 		let ret = conf.get<T>(settingName);
 		if ( !ret ) {
-			let err = "[" + description + "] setting is not set.";
+			let err = "[" + (description||settingName) + "] setting is not set.";
 			vscode.window.showErrorMessage(err);
 			throw new Error(err);
 		}
@@ -2235,29 +2935,46 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Update plugin variables from config when config setting is changed or on init
 	function updateSettingsFromConfiguration() {
-		let conf = vscode.workspace.getConfiguration("eathena");
+		let conf = vscode.workspace.getConfiguration(languageIdLowerCase);
 		mobImageURL = conf.get<string>("mobImageURL");
 		itemImageURL = conf.get<string>("itemImageURL");
 		skillImageURL = conf.get<string>("skillImageURL");
 		defaultAthenaDbColumnHighlighting = conf.get<boolean>("defaultAthenaDbColumnHighlighting");
 		defaultAthenaDbColumnHints = conf.get<boolean>("defaultAthenaDbColumnHints");
-		athenaNpcDir = formatDirNameFromConfig(getConfValOrThrow("athenaNpcDirectory", "eAthena NPC directory"));
-		athenaDbDir = formatDirNameFromConfig(getConfValOrThrow("athenaDbDirectory", "eAthena DB directory"));
+		
+		is_rAthena = conf.get<boolean>("isRAthena", false);
+
+		itemDbParamIndex = new ItemDBParamIndex();
+		mobDbParamIndex = new MobDBParamIndex();
+		skillDbParamIndex = new SkillDBParamIndex();
+		mobSkillDBParamIndex = new MobSkillDBParamIndex();
+		
+		athenaDir = formatDirNameFromConfig(getConfValOrThrow<string>("athenaDirectory", "Athena directory"));
+		athenaNpcDir = athenaDir + "/npc";
+
+		if ( is_rAthena ) {
+			athenaDbDir = athenaDir + "/db/re";
+			itemDbFilePaths = [ athenaDbDir + "/item_db.txt" ];
+			mobDbFilePaths = [ athenaDbDir + "/mob_db.txt" ];
+			mobSkillDbFilePaths = [ athenaDbDir + "/mob_skill_db.txt" ];
+		} else {
+			athenaDbDir = athenaDir + "/db";
+			itemDbFilePaths = [ athenaDbDir + "/item_db.txt", athenaDbDir + "/item_db2.txt" ];
+			mobDbFilePaths = [ athenaDbDir + "/mob_db.txt", athenaDbDir + "/mob_db2.txt" ];
+			mobSkillDbFilePaths = [ athenaDbDir + "/mob_skill_db.txt", athenaDbDir + "/mob_skill_db2.txt" ];
+		}
+		constDBFilePath = athenaDir + "/db/const.txt";
+		
 		itemBonusTxtPath = getConfValOrThrow("itemBonusTxtPath", "item_bonus.txt path");
 		questid2displaypath = getConfValOrThrow("clientQuestid2displayPath", "Client questid2display.txt path");
 		codepage = getConfValOrThrow("encoding", "Encoding");
-
-		itemDbFilePaths = getDbFilePathsFromConfiguration("itemDbRelativePath", "ItemDB Relative Path(s)");
-		mobDbFilePaths = getDbFilePathsFromConfiguration("mobDbRelativePath", "MobDB Relative Path(s)");
-		mobSkillDbFilePaths = getDbFilePathsFromConfiguration("mobSkillDbRelativePath", "MobSkillDB Relative Path(s)");
-		constDBFilePath = athenaDbDir + "/" + getConfValOrThrow<string>("constDbRelativePath", "Const DB relative path");
 	}
 
 	updateSettingsFromConfiguration();
 
 	vscode.workspace.onDidChangeConfiguration(event => {
-		if ( event.affectsConfiguration("eathena") ) {
-			conf = vscode.workspace.getConfiguration("eathena");
+		if ( event.affectsConfiguration(languageIdLowerCase) ) {
+			conf = vscode.workspace.getConfiguration(languageIdLowerCase);
 			updateSettingsFromConfiguration();
 		}
 	});
@@ -2279,19 +2996,28 @@ export function activate(context: vscode.ExtensionContext) {
 	skillDB = new AthenaSkillDB();
 	skillCastDB = new AthenaSkillCastDB();
 
-	loadConstDB(constDBFilePath, is_rAthena ? getConfValOrThrow("scriptConstantsHppPath", "script_constants.hpp path") : undefined);
+	itemTradeDB = new AthenaItemTradeDB();
+
+	loadConstDB(constDBFilePath, is_rAthena ? athenaDir + "/src/map/script_constants.hpp" : undefined);
 
 	const itemBonusDB = is_rAthena ? new ItemBonusDB_rAthena(itemBonusTxtPath) : new ItemBonusDB([ itemBonusTxtPath ]);
 
-	let completionsTxtFn = context.extensionPath + "/res/completions.txt";
-	if ( !fs.existsSync(completionsTxtFn) )
-		syncWithAthena();
+	let completionsTxtDir = context.extensionPath + "/res";
+	let completionsTxtFn = completionsTxtDir + "/completions.txt";
+	if ( !fs.existsSync(completionsTxtFn) ) {
+		if ( is_rAthena )
+			syncWithAthena();
+		else {
+			vscode.window.showErrorMessage("File missing: " + completionsTxtFn);
+			return;
+		}
+	}
 
 	let allCompletions = readCompletionsArrayFromFile(completionsTxtFn);
 
 	mobDB.idToDbLine.forEach(element => {
-		const mobName = element.params[AthenaMobDB.spriteNameParamIndex];
-		const mobId = element.params[AthenaMobDB.mobIdParamIndex];
+		const mobName = element.params[mobDbParamIndex.Sprite_Name];
+		const mobId = element.params[mobDbParamIndex.ID];
 
 		const completionItem = new AthenaDbCompletionItem(mobName, vscode.CompletionItemKind.Unit, mobDB, element);
 		completionItem.filterText = mobName + " " + mobId;
@@ -2300,8 +3026,8 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	itemDB.idToDbLine.forEach(element => {
-		const itemName = element.params[AthenaItemDB.aegisNameParamIndex];
-		const itemId = element.params[AthenaItemDB.itemIdParamIndex];
+		const itemName = element.params[itemDbParamIndex.AegisName];
+		const itemId = element.params[itemDbParamIndex.ID];
 		const completionItem = new AthenaDbCompletionItem(itemName, vscode.CompletionItemKind.Property, itemDB, element);
 		completionItem.filterText = itemName + " " + itemId;
 		//completionItem.documentation = new vscode.MarkdownString(itemDB.explainLine(element));
@@ -2337,7 +3063,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if ( !itemDbLine && wordInt > 0 )
 				itemDbLine = itemDB.idToDbLine.get(wordInt);
 			if ( itemDbLine ) {
-				let itemID = itemDbLine.params[AthenaItemDB.itemIdParamIndex];
+				let itemID = itemDbLine.params[itemDbParamIndex.ID];
 				result = result.concat(findWordReferencesInAllFiles([itemID, word]));
 			}
 
@@ -2345,7 +3071,7 @@ export function activate(context: vscode.ExtensionContext) {
 			if ( !mobDbLine && wordInt > 0 )
 				mobDbLine = mobDB.idToDbLine.get(wordInt);
 			if ( mobDbLine ) {
-				let mobId = mobDbLine.params[AthenaMobDB.mobIdParamIndex];
+				let mobId = mobDbLine.params[mobDbParamIndex.ID];
 				result = result.concat(findWordReferencesInAllFiles([mobId, word]));
 			}
 			return result;
@@ -2415,7 +3141,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		lineOfs--;
 
-		// Скипаем до начала строки, если внутри строки
+		// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 		let tmpOfs = lineOfs + 1;
 		let quotesNum = 0;
 		let prevQuotePos = -1;
@@ -2451,7 +3177,7 @@ export function activate(context: vscode.ExtensionContext) {
 				} while ( tmpOfs > 0 );
 
 				if ( quotesNum % 2 == 1 ) {
-					// Были внутри строки
+					// пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 					lineOfs = prevQuotePos - 1;
 					continue;
 				} else {
@@ -2468,7 +3194,7 @@ export function activate(context: vscode.ExtensionContext) {
 						braceLv++;
 				} while ( braceLv > 0 && lineOfs >= 0 );
 				lineOfs--;
-				// Также скипаем возможное название вложенной функции перед скобками
+				// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 				while ( lineOfs >= 0 && isWhitespace(line.charAt(lineOfs)) )
 					lineOfs--;
 
@@ -2494,7 +3220,7 @@ export function activate(context: vscode.ExtensionContext) {
 			let word = document.getText(wordRange);
 			let functionInfo = scriptFunctionDB.get(word);
 			if ( functionInfo != null )
-				return new GetFunctionAndParameterInfoResult(functionInfo, activeParameter);
+				return new GetFunctionAndParameterInfoResult(functionInfo, activeParameter < functionInfo.params.length ? activeParameter : functionInfo.params.length - 1);
 
 			if ( activeParameter == -1 )
 				activeParameter = 0;
@@ -2506,6 +3232,9 @@ export function activate(context: vscode.ExtensionContext) {
 	let signatureHelpProvider = vscode.languages.registerSignatureHelpProvider(languageId, {
 		provideSignatureHelp(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.SignatureHelpContext): vscode.ProviderResult<vscode.SignatureHelp>
 		{
+
+			let hover = provideHover(document, position, token);
+
 			let fp = getFunctionAndParameterInfo(document, position);
 			if ( fp ) {
 				let functionInfo = fp.func;
@@ -2517,8 +3246,7 @@ export function activate(context: vscode.ExtensionContext) {
 				let info = new vscode.SignatureInformation(signatureLabel);
 				functionInfo.params.forEach(p => {
 					let paramLabel = p.getLabel();
-					info.parameters.push(new vscode.ParameterInformation(paramLabel));
-					
+					info.parameters.push(new vscode.ParameterInformation(paramLabel, new vscode.MarkdownString(hover)));
 				});
 				infos.push(info);
 				ret.signatures = infos;
@@ -2528,34 +3256,37 @@ export function activate(context: vscode.ExtensionContext) {
 				return ret;
 			}
 
-			// Если до сих пор ничего не вернули, значит сигнатура функции не найдена. Проверяем на необходимость отображения параметра
+			// пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ. пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 			if ( isDocumentAthenaDB(document) ) {
 				let dbFile = ensureDocumentAthenaDbFile(document);
-				let parsedLine = dbFile.lines[position.line];
+				let dbLine = dbFile.lines[position.line];
 
-				let activeParam = -1;
-				for ( let i = 0; i < parsedLine.paramRanges.length; i++ ) {
-					if ( parsedLine.paramRanges[i].contains(position) ) {
-						activeParam = i;
-						break;
-					}
-				}
+				let activeParam = dbLine.getParamIdxAtPosition(position);
 
 				let ret = new vscode.SignatureHelp();
 				let infos = new Array<vscode.SignatureInformation>();
 				let signatureLabel = "";
 				
 				dbFile.parentDb.paramNames.forEach(p => {
-					signatureLabel += "[" + p + "] "	
+					signatureLabel += "[" + p + "]\n"	
 				});
 				let info = new vscode.SignatureInformation(signatureLabel);
+				for ( let i = 0; i < dbFile.parentDb.paramNames.length; i++ ) {
+					let p = dbFile.parentDb.paramNames[i];
+					let documentation = dbFile.parentDb.getParamDocumentation(i);
+					let str = hover || "";
+					if ( documentation )
+						str += "  \n" + documentation;
+
+					info.parameters.push(new vscode.ParameterInformation("[" + p + "]", new vscode.MarkdownString(str)));
+
+				}
 				dbFile.parentDb.paramNames.forEach(p => {
-					info.parameters.push(new vscode.ParameterInformation("[" + p + "]", dbFile.parentDb.getParamDocumentation(p)));
 				});
 				infos.push(info);
 				ret.signatures = infos;
 				ret.activeSignature = 0;
-				if ( activeParam != -1 )
+				if ( activeParam != undefined )
 					ret.activeParameter = activeParam;
 				return ret;
 
@@ -2581,102 +3312,153 @@ export function activate(context: vscode.ExtensionContext) {
 			|| paramNameLowerCase.includes("quest_id") || paramNameLowerCase.includes("questid") );
 	}
 
+	function provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) : string | undefined
+	{
+		let colHint = "";
+		if ( isDocumentAthenaDB(document) && position.line != 0 ) {
+			let dbFile = ensureDocumentAthenaDbFile(document);
+			let db = dbFile.parentDb;
+			let parsedLine = dbFile.lines[position.line];
+			
+			let i = 0;
+			for ( i = 0; i < parsedLine.paramRanges.length; i++ )
+				if ( parsedLine.paramRanges[i].contains(position) ) {
+					colHint = "Column " + i;
+					if ( i < db.paramNames.length )
+						colHint += "  \n" + db.explainParamByLine(parsedLine, i, false);
+					//colHint += "  \n  \n";
+					break;
+				}
+		}
+
+		let wordRange = document.getWordRangeAtPosition(position, wordPattern);
+		let word = document.getText(wordRange);
+		let wordInt = parseInt(word);
+
+		let functionInfo = scriptFunctionDB.get(word);
+		if ( functionInfo != null ) {
+			if ( colHint.length )
+				colHint += "  \n___  \n"
+			return colHint + functionInfo.getLabel();
+		}
+
+		let DBs = [ itemDB, mobDB, skillDB ];
+		
+		let isNameExplained = false;
+		for ( let i = 0; i < DBs.length; i++ ) { // no foreach because we use return which cant be used inside foreach
+			let dbLine = DBs[i].nameToDbLine.get(word);
+			if ( dbLine ) {
+				if ( colHint.length )
+					colHint += "  \n___  \n"
+
+				colHint += DBs[i].explainLine(dbLine, false);
+				isNameExplained = true;
+			}
+		}
+
+		let itemBonusExplanation = itemBonusDB.explainBonus(word);
+		if ( itemBonusExplanation ) {
+			if ( colHint.length )
+				colHint += "  \n___  \n"
+			return colHint + itemBonusExplanation;
+		}
+
+		let constDbEntry = constDB.get(word.toLowerCase());
+		if ( constDbEntry ) {
+			let val = "*script constant* " + constDbEntry.name;
+			if ( constDbEntry.val != undefined )
+				val += " = " + constDbEntry.val;
+			if ( colHint.length )
+				colHint += "  \n___  \n"
+			colHint += val;
+		}
+
+		let funcInfo = getFunctionAndParameterInfo(document, position);
+		const paramNameLowerCase = ( funcInfo && funcInfo.activeParameter >= 0 ) ? funcInfo.func.params[funcInfo.activeParameter].name.toLowerCase() : "";
+			
+		if ( isWordQuestID(document, position) ) {
+			let strServer : string = "";
+			let strClient : string = "";
+			if ( questDB ) {
+				const serverQuest = <AthenaQuestDBLine>questDB.idToDbLine.get(wordInt);
+				if ( serverQuest )
+					strServer = serverQuest.getStringForTooltip();
+			}
+			if ( questid2display ) {
+				const clientQuest = questid2display.get(wordInt);
+				if ( clientQuest )
+					strClient = makeMarkdownLink(clientQuest.name, questid2displaypath, clientQuest.lineNum) + "  \n"+ clientQuest.longdesc + "  \n*" + clientQuest.shortdesc + "*  \n";
+			}
+
+			let str : string = "";
+			if ( strServer && strClient )
+				str = "**server**  \n___  \n" + strServer + "**client**  \n" + strClient;
+			else if ( strServer )
+				str = strServer;
+			else if ( strClient )
+				str = strClient;
+
+			if ( str.length )
+				return colHint + str;
+		}
+
+		if ( wordInt && funcInfo && funcInfo.activeParameter != -1 ) {
+			if ( paramNameLowerCase == "mob_id" || paramNameLowerCase == "mobid" || paramNameLowerCase == "mob" || paramNameLowerCase == "monster" || paramNameLowerCase == "class_" || paramNameLowerCase == "class" ) {
+				let mobDbLine = mobDB.idToDbLine.get(wordInt);
+				if ( mobDbLine ) {
+					if ( colHint.length )
+						colHint += "  \n___  \n"
+
+					return colHint + mobDB.explainLine(mobDbLine, false, position);
+				}
+			}
+			else if ( paramNameLowerCase == "itemid" || paramNameLowerCase == "itid" || paramNameLowerCase == "item" ) {
+				let itemDbLine = itemDB.idToDbLine.get(wordInt);
+				if ( itemDbLine ) {
+					if ( colHint.length )
+						colHint += "  \n___  \n"
+					return colHint + itemDB.explainLine(itemDbLine, false, position);
+				}
+			}
+		}
+
+		// Test for NPC view
+		let lineText = document.lineAt(position).text;
+		let match = lineText.match(/[A-Za-z0-9@,_ ]*\t(?:script|warp|shop|cashshop|duplicate\([^)]*\))\t[^\t]*\t([^,]*)/);
+		if ( match && match.length == 2 && word == match[1] ) {
+			let npcView : number|undefined;
+			if ( constDbEntry && constDbEntry.val )
+				npcView = constDbEntry.val;
+			else if ( isFullyNumericString(word) )
+				npcView = wordInt;
+			
+			if ( npcView ) {
+				if ( colHint.length )
+					colHint += "  \n___  \n"
+				let url = mobImageURL ? mobImageURL.replace("MOBID", npcView.toString()) : "";
+
+				colHint += "![image]("+url+")";
+			}
+
+		}
+		if ( colHint )
+			return colHint;
+
+		return undefined;
+	}
+
+
+
 	let hoverProvider = vscode.languages.registerHoverProvider(languageId, {
+		
+		
 		provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken)
 		{
-			let colHint = "";
-			if ( isDocumentAthenaDB(document) && position.line != 0 ) {
-				let dbFile = ensureDocumentAthenaDbFile(document);
-				let db = dbFile.parentDb;
-				let parsedLine = dbFile.lines[position.line];
-				
-				let i = 0;
-				for ( i = 0; i < parsedLine.paramRanges.length; i++ )
-					if ( parsedLine.paramRanges[i].contains(position) ) {
-						colHint = "Column " + i;
-						if ( i < db.paramNames.length )
-							colHint += "  \n" + db.explainParamByLine(parsedLine, i);
-						colHint += "  \n  \n";
-						break;
-					}
-			}
-
-			let wordRange = document.getWordRangeAtPosition(position, wordPattern);
-			let word = document.getText(wordRange);
-			let wordInt = parseInt(word);
-
-			let functionInfo = scriptFunctionDB.get(word);
-			if ( functionInfo != null ) {
-				return new vscode.Hover(colHint + functionInfo.getLabel(), wordRange);
-			}
-
-			let DBs = [ itemDB, mobDB, skillDB ];
-			
-			for ( let i = 0; i < DBs.length; i++ ) { // no foreach because we use return which cant be used inside foreach
-				let dbLine = DBs[i].nameToDbLine.get(word);
-				if ( dbLine ) {
-					colHint += "*"+dbLine.filePath+"*" + "  \n" + DBs[i].explainLine(dbLine);
-				}
-			}
-
-			let itemBonusExplanation = itemBonusDB.explainBonus(word);
-			if ( itemBonusExplanation )
-				return new vscode.Hover(colHint + itemBonusExplanation, wordRange);
-
-			let constDbEntry = constDB.get(word.toLowerCase());
-			if ( constDbEntry ) {
-				let val = "*script constant* " + constDbEntry.name;
-				if ( constDbEntry.val != undefined )
-					val += " = " + constDbEntry.val;
-				return new vscode.Hover(colHint + val, wordRange);
-			}
-
-			let funcInfo = getFunctionAndParameterInfo(document, position);
-			const paramNameLowerCase = ( funcInfo && funcInfo.activeParameter >= 0 ) ? funcInfo.func.params[funcInfo.activeParameter].name.toLowerCase() : "";
-				
-			if ( isWordQuestID(document, position) ) {
-				let strServer : string = "";
-				let strClient : string = "";
-				if ( questDB ) {
-					const serverQuest = <AthenaQuestDBLine>questDB.idToDbLine.get(wordInt);
-					if ( serverQuest )
-						strServer = serverQuest.getStringForTooltip();
-				}
-				if ( questid2display ) {
-					const clientQuest = questid2display.get(wordInt);
-					if ( clientQuest )
-						strClient = makeMarkdownLink(clientQuest.name, questid2displaypath, clientQuest.lineNum) + "  \n"+ clientQuest.longdesc + "  \n*" + clientQuest.shortdesc + "*  \n";
-				}
-
-				let str : string = "";
-				if ( strServer && strClient )
-					str = "**server**  \n" + strServer + "**client**  \n" + strClient;
-				else if ( strServer )
-					str = strServer;
-				else if ( strClient )
-					str = strClient;
-
-				if ( str.length )
-					return new vscode.Hover(colHint + str, wordRange);
-			}
-
-			if ( wordInt && funcInfo && funcInfo.activeParameter != -1 ) {
-				if ( paramNameLowerCase == "mob_id" || paramNameLowerCase == "mobid" || paramNameLowerCase == "mob" || paramNameLowerCase == "monster" || paramNameLowerCase == "class_" || paramNameLowerCase == "class" ) {
-					let mobDbLine = mobDB.idToDbLine.get(wordInt);
-					if ( mobDbLine )
-						return new vscode.Hover(colHint + mobDB.explainLine(mobDbLine), wordRange);
-				}
-				else if ( paramNameLowerCase == "itemid" || paramNameLowerCase == "itid" || paramNameLowerCase == "item" ) {
-					let itemDbLine = itemDB.idToDbLine.get(wordInt);
-					if ( itemDbLine )
-						return new vscode.Hover(colHint + itemDB.explainLine(itemDbLine), wordRange);
-				}
-			}
-
-			if ( colHint )
-				return new vscode.Hover(colHint, wordRange);
-
-			return null;
+			let str = provideHover(document, position, token);
+			if ( str )
+				return new vscode.Hover(str, document.getWordRangeAtPosition(position, wordPattern));
+			else
+				return null;
 		}
 	});
 
@@ -2687,7 +3469,7 @@ export function activate(context: vscode.ExtensionContext) {
 		{
 			if ( item instanceof AthenaDbCompletionItem ) {
 				if ( !item.documentation )
-					item.documentation = new vscode.MarkdownString(item.db.explainLine(item.dbLine));
+					item.documentation = new vscode.MarkdownString(item.db.explainLine(item.dbLine, false));
 			}
 
 			let itemBonusExplanation = itemBonusDB.explainBonus(item.label);
@@ -2706,8 +3488,10 @@ export function activate(context: vscode.ExtensionContext) {
 
 	let navProvider = vscode.languages.registerDocumentSymbolProvider(languageId, {
 
-		provideDocumentSymbols(document: vscode.TextDocument, token: vscode.CancellationToken): Thenable<vscode.SymbolInformation[]> {
-			return new Promise((resolve, reject) => {
+		provideDocumentSymbols(document: vscode.TextDocument, token: vscode.CancellationToken): vscode.SymbolInformation[] {
+				if ( isDocumentAthenaDB(document) )
+					return ensureDocumentAthenaDbFile(document).symbols;
+
 				let symbols = new Array<vscode.SymbolInformation>();
 
 				let text = document.getText();
@@ -2717,28 +3501,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 				let label = "";
 				let bodyStart = 0, bodyEnd = 0;
-				
-				if ( isDocumentAthenaDB(document) ) {
-					let dbFile = ensureDocumentAthenaDbFile(document);
-					let db = dbFile.parentDb;
-					let n = 0;
 
-					dbFile.lines.forEach(l => {
-						let label = db.getSymbolLabelForLine(l);
-						if ( label ) {
-							let symbol = new vscode.SymbolInformation(label,
-								vscode.SymbolKind.Variable,
-								document.fileName,
-								new vscode.Location(document.uri, new vscode.Range(l.paramRanges[0].start, l.paramRanges[l.paramRanges.length-1].end)));
-							symbols.push(symbol);
-							n++;
-						}
-					});
-
-					//console.log("total symbols: " + n);
-					resolve(symbols);
-					return;
-				}
+				let innerSymbols = new Array<vscode.SymbolInformation>();
 
 				for ( var i = 0; i < text.length; i++ ) {
 					var c = text.charAt(i);
@@ -2788,7 +3552,8 @@ export function activate(context: vscode.ExtensionContext) {
 							}
 						}
 					} else if ( c == '\r' || c == '\n' ) {
-						var beginningOfLine = getBeginningOfLinePosition(text, i);
+						let matchResult;
+						let beginningOfLine = getBeginningOfLinePosition(text, i);
 						line = text.substring(beginningOfLine, i);
 						if ( line.indexOf("\tduplicate(") != -1 ) {
 							type = vscode.SymbolKind.EnumMember;
@@ -2808,24 +3573,95 @@ export function activate(context: vscode.ExtensionContext) {
 						} else if ( line.indexOf("\tcashshop\t") != -1 ) {
 							type = vscode.SymbolKind.Interface;
 							label = getSymbolLabel(line);
+						} else if ( matchResult = line.match(/On[^:]*:/) ) {
+							type = vscode.SymbolKind.Class;
+							label = matchResult[0];
+						} else if ( matchResult = line.trim().match(/function\t([^\t]*)\t{/) ) {
+							if ( matchResult.length >= 2 ) {
+								type = vscode.SymbolKind.Method;
+								label = matchResult[1];
+							}
 						}
 						bodyStart = beginningOfLine;
 						bodyEnd = i;
 					}
 					if ( type != -1 ) {
 						let position = new vscode.Range(document.positionAt(bodyStart), document.positionAt(bodyEnd));
-						let symbol = new vscode.SymbolInformation(label, type, document.fileName, new vscode.Location(document.uri, position));
+						//let symbol = new vscode.SymbolInformation(label, type, document.fileName, new vscode.Location(document.uri, position));	// this one is only needed for workspace symbols, with file and stuff
+						let symbol = new vscode.SymbolInformation(label, type, position);
 						symbols.push(symbol);
 						type = -1;
 					}
 				}
-				resolve(symbols);
-			});
+				return symbols;
     	}
 
 	});
 
-	context.subscriptions.push(completionProvider, navProvider, hoverProvider, gotoDefinitionProvider, referenceProvider, copySearchRegexCmd, signatureHelpProvider);
+	let workspaceSymbolsProvider = vscode.languages.registerWorkspaceSymbolProvider({
+		provideWorkspaceSymbols(query: string, token: vscode.CancellationToken) {
+			let ret = Array<vscode.SymbolInformation>();
+			// let consumed = new Array<boolean>(query.length);
+
+			query = query.toLowerCase();
+
+			let databases = [ itemDB, mobDB, skillDB ];
+			let allSymbols = new Array<vscode.SymbolInformation>();
+			try {
+				databases.forEach(db => {
+					db.files.forEach(f => {
+						allSymbols = allSymbols.concat(f.symbols);
+						if ( token.isCancellationRequested )
+							throw new Error();
+					});
+				});
+
+
+				allSymbols.forEach(s => {
+					// Commented out: Documentation says that we need to provide a relaxed string filtering, but I like the substring comparison better, and it's faster as well.
+					
+					// Type 1: relaxed string comparison
+					// consumed.fill(false);
+					// let queryCharIdx;
+					// let consumedNum = 0;
+
+					// let name = s.name.toLowerCase();
+
+					// for ( let nameCharIdx = 0; nameCharIdx < name.length; nameCharIdx++ ) {
+					// 	for ( queryCharIdx = 0; queryCharIdx < query.length; queryCharIdx++ ) {
+					// 		if ( query.charAt(queryCharIdx) == name.charAt(nameCharIdx) && !consumed[queryCharIdx] ) {
+					// 			consumed[queryCharIdx] = true;
+					// 			consumedNum++;
+					// 			break;
+					// 		}
+					// 	}
+
+					// 	if ( consumedNum == query.length )
+					// 		break; // All query chars have been consumed, no need to continue checking.
+					// }
+
+					// if ( consumed.includes(false) )
+					// 	return;
+
+					// Type 2: substring comparison
+					if ( !s.name.toLowerCase().includes(query) )
+						return;
+
+					ret.push(s);
+
+					if ( token.isCancellationRequested )
+						throw new Error();
+				});
+			} catch ( Error ) {	// Cancelled
+				return new Array<vscode.SymbolInformation>();
+			} 
+
+
+			return ret;
+		}
+	});
+
+	context.subscriptions.push(completionProvider, navProvider, hoverProvider, gotoDefinitionProvider, referenceProvider, copySearchRegexCmd, signatureHelpProvider, workspaceSymbolsProvider);
 
 	let timeout: NodeJS.Timer | undefined = undefined;
 
@@ -2851,16 +3687,18 @@ export function activate(context: vscode.ExtensionContext) {
 		if ( document.languageId != languageId )
 			return;
 
-		if ( !isDocumentAthenaDB(document) )
+		let isAthenaDB = isDocumentAthenaDB(document);
+
+		if ( !isAthenaDB )
 			return;
 
 		let enableHighlight = forceDbColumnHighlight.get(document.fileName);
 		if ( enableHighlight == null )
-			enableHighlight = isDocumentAthenaDB(document) && defaultAthenaDbColumnHighlighting;
+			enableHighlight = isAthenaDB && defaultAthenaDbColumnHighlighting;
 
 		let enableHints = forceDbColumnHints.get(document.fileName);
 		if ( enableHints == null )
-			enableHints = isDocumentAthenaDB(document) && defaultAthenaDbColumnHints;
+			enableHints = isAthenaDB && defaultAthenaDbColumnHints;
 
 		let colDecorationTypes = documentToDecorationTypes.get(document);
 		if ( forceUpdateDecorationTypes && colDecorationTypes != null ) {
@@ -2951,14 +3789,33 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}
 
+	vscode.window.onDidChangeTextEditorSelection(event => {
+		let selection = event.selections[0];
+		if ( isDocumentAthenaDB(event.textEditor.document) && webviewPanel ) { 
+			let requireUpdateWebview = selection.start.line != webviewPanelLineNum;
+			if ( !requireUpdateWebview ) {
+				let dbFile = ensureDocumentAthenaDbFile(event.textEditor.document);
+				let newActiveParam = dbFile.getParamIdxAtPosition(selection.start);
+				if ( newActiveParam != webviewPanelActiveParam )
+					requireUpdateWebview = true;
+			}
+			if ( requireUpdateWebview )
+				updateWebviewContent();
+		}
+	});
+
 	vscode.workspace.onDidChangeTextDocument(event => {
 		let document = event.document;
 		let dbFile = isDocumentAthenaDB(document) ? ensureDocumentAthenaDbFile(document) : null;
 		if ( dbFile ) {
 			for ( let i = 0; i < event.contentChanges.length; i++ ) {
 				let change = event.contentChanges[i];
-				for ( let l = change.range.start.line; l <= change.range.end.line; l++ )
+				for ( let l = change.range.start.line; l <= change.range.end.line; l++ ) {
 					dbFile.updateLine(document, l);
+
+					if ( activeEditor && activeEditor.selection.start.line == change.range.start.line && webviewPanel )
+						updateWebviewContent();
+				}
 			}
 		}
 
@@ -3009,6 +3866,218 @@ export function activate(context: vscode.ExtensionContext) {
 	vscode.commands.registerCommand("extension.sortLuaKeyValTableInSelection", () => {
 		sortLuaKeyValTableInSelection();
 	});
+
+	vscode.commands.registerCommand("extension.toggleLinePreview", () => {
+		if ( !webviewPanel ) {
+			webviewPanel = vscode.window.createWebviewPanel("eapreview", "DB Entry Preview", vscode.ViewColumn.Two, {
+				enableScripts: true
+			});
+			updateWebviewContent();
+
+			webviewPanel.onDidDispose(
+				() => {
+					webviewPanel = undefined;
+				},
+				null,
+				context.subscriptions
+			  );
+				
+			  webviewPanel.webview.onDidReceiveMessage(
+				message => {
+					switch (message.command) {
+					case 'selectParameter':
+						if ( !isDocumentAthenaDB(webviewPanelEditor.document) || webviewPanelLineNum == undefined )
+							return;
+						
+						let dbFile = ensureDocumentAthenaDbFile(webviewPanelEditor.document);
+						if ( webviewPanelLineNum >= dbFile.lines.length ) {
+							vscode.window.showErrorMessage("invalid line selected");
+							return;
+						}
+						let dbLine = dbFile.lines[webviewPanelLineNum];
+
+						let paramIndex = dbFile.parentDb.getParamIndex(message.text);
+						if ( paramIndex < 0 || paramIndex >= dbLine.paramRanges.length )
+							return;
+
+
+						
+						let selection = new vscode.Selection(dbLine.paramRanges[paramIndex].start, dbLine.paramRanges[paramIndex].start);
+						
+						//vscode.workspace.openTextDocument(webviewPanelEditor.document.fileName);
+						vscode.window.showTextDocument(webviewPanelEditor.document, { viewColumn : vscode.ViewColumn.One, selection : selection });
+					}
+				},
+				undefined,
+				context.subscriptions
+			);
+
+		} else {
+			webviewPanel.dispose();
+			webviewPanel = undefined;
+		}
+	});
+
+	vscode.commands.registerCommand("extension.copyEmbedHtml", () => {
+		let activeEditor = vscode.window.activeTextEditor;
+		if ( !activeEditor )
+			return;
+		let wordRange = activeEditor.document.getWordRangeAtPosition(activeEditor.selection.start, wordPattern);
+		let word = activeEditor.document.getText(wordRange);
+		let itemDBLine = itemDB.nameToDbLine.get(word);
+		let mobDBLine = mobDB.nameToDbLine.get(word);
+		let skillDBLine = skillDB.nameToDbLine.get(word);
+		let dbLine = itemDBLine || mobDBLine || skillDBLine;
+		if ( !dbLine ) {
+			vscode.window.showErrorMessage("Failed to find item/mob/skill: '"+word+"'.");
+			return;
+		}
+
+		if ( itemDBLine ) {
+			let itemId = itemDBLine.getIntParamByIndex(itemDbParamIndex.ID);
+			let itemType = itemDBLine.getIntParamByIndex(itemDbParamIndex.Type);
+			//let itemSection : string;
+
+			let URL : string;
+
+			if ( !itemId )
+				return;
+
+			if ( itemType == IT.WEAPON || itemType == IT.ARMOR || itemType == IT.AMMO )
+				URL = getConfValOrThrow<string>("databaseURL.equipItem");
+			else if ( itemType == IT.CARD )
+				URL = getConfValOrThrow<string>("databaseURL.cardItem");
+			else
+				URL = getConfValOrThrow<string>("databaseURL.normalItem");
+
+
+			URL = URL.replace("ITEMID", itemId.toString());
+
+			if ( !itemImageURL ) {
+				vscode.window.showErrorMessage("Item image URL setting is not set");
+				return;
+			}
+
+			let imageURL = itemImageURL.replace("ITEMID", itemId.toString());
+			let itemVisibleName = itemDBLine.getParamByIndex(itemDbParamIndex.visibleName());
+
+			vscode.env.clipboard.writeText("<a href=\""+ URL +"\"><img src=\""+imageURL+"\" height=\"24\" style=\"vertical-align:middle; padding-right: 10px\">"+itemVisibleName+"</a>");
+			vscode.window.showInformationMessage("HTML code to embed '"+ itemVisibleName +"' has been copied to the clipboard.");
+		} else if ( mobDBLine ) {
+			let mobId = mobDBLine.getIntParamByIndex(mobDbParamIndex.ID);
+			if ( !mobId )
+				return;
+			let URL = getConfValOrThrow<string>("databaseURL.mob");
+			URL = URL.replace("MOBID", mobId.toString());
+
+			if ( !mobImageURL ) {
+				vscode.window.showErrorMessage("Mob image URL setting is not set");
+				return;
+			}
+
+			let imageURL = mobImageURL.replace("MOBID", mobId.toString());
+
+			let mobVisibleName = mobDBLine.getParamByIndex(mobDbParamIndex.visibleName());
+			vscode.env.clipboard.writeText("<a href=\""+ URL +"\"><img src=\""+ imageURL +"\" height=\"24\" style=\"vertical-align:middle; padding-right: 10px\">"+ mobVisibleName +"</a>");
+			vscode.window.showInformationMessage("HTML code to embed '"+ mobVisibleName +"' has been copied to the clipboard.");
+		} else if ( skillDBLine ) {
+			let skillId = skillDBLine.getIntParamByIndex(skillDbParamIndex.id)
+			let skillTechNameLower = skillDBLine.getParamByIndex(skillDbParamIndex.techName)?.toLowerCase();
+			let skillVisibleName = skillDBLine.getParamByIndex(skillDbParamIndex.defaultVisibleName());
+
+			if ( !skillId || !skillTechNameLower )	// skill_id=0 is valid
+				return;
+
+			let URL = getConfValOrThrow<string>("databaseURL.skill");
+			URL = URL.replace("SKILLID", skillId.toString()).replace("SKILLNAME", skillTechNameLower);
+
+			if ( !skillImageURL ) {
+				vscode.window.showErrorMessage("Skill image URL setting is not set");
+				return;
+			}
+
+			let imageURL = skillImageURL.replace("SKILLID", skillId.toString()).replace("SKILLNAME", skillTechNameLower);
+
+			vscode.env.clipboard.writeText("<a href=\""+ URL +"\"><img src=\""+ imageURL +"\" height=\"24\" style=\"vertical-align:middle; padding-right: 10px\">"+skillVisibleName+"</a>");
+			vscode.window.showInformationMessage("HTML code to embed '"+ skillVisibleName +"' has been copied to the clipboard.");
+		}
+	});
+
+	vscode.commands.registerCommand("extension.findItemDesc", () => {
+		let activeEditor = vscode.window.activeTextEditor;
+		if ( !activeEditor )
+			return;
+		let wordRange = activeEditor.document.getWordRangeAtPosition(activeEditor.selection.start, wordPattern);
+		let word = activeEditor.document.getText(wordRange);
+		//let skillDBLine = skillDB.nameToDbLine.get(word);
+		let itemId : number|undefined;
+		if ( isFullyNumericString(word) )
+			itemId = parseInt(word);
+		else {
+			let itemDBLine = itemDB.nameToDbLine.get(word);
+			if ( !itemDBLine ) {
+				vscode.window.showErrorMessage("item" + word + " not found in db");
+				return;
+			}
+			itemId = itemDBLine.getIntParamByIndex(itemDbParamIndex.ID);
+			if ( !itemId ) {
+				vscode.window.showErrorMessage("item" + word + " has no ID");
+				return;
+			}
+		}
+
+		let itemInfoFileName = getConfValOrThrow<string>("itemInfoPath", "iteminfo path");
+		if ( !fs.existsSync(itemInfoFileName) || !fs.statSync(itemInfoFileName).isFile() ) {
+			vscode.window.showErrorMessage(itemInfoFileName + " not found or is not a file");
+			return;
+		}
+
+		let fileContent = fs.readFileSync(itemInfoFileName);
+		//let fileContentStr = iconv.decode(fileContent, codepage);
+		let ofs = fileContent.indexOf("["+itemId+"]");
+		if ( ofs == -1 ) {
+			vscode.window.showErrorMessage("item with ID=" + itemId + " not found in file " + itemInfoFileName);
+			return;
+		}
+
+		let ret = vscode.workspace.openTextDocument(itemInfoFileName);
+		ret.then(onItemInfoOpenSuccess, onItemInfoOpenFailed);
+		function onItemInfoOpenSuccess(document: vscode.TextDocument) {
+			let pos = document.positionAt(ofs);
+			vscode.window.showTextDocument(document, { selection : new vscode.Selection(pos, pos) });
+		}
+		function onItemInfoOpenFailed(reason : any) {
+			vscode.window.showErrorMessage("Failed to open itemInfo file "+ itemInfoFileName +" in VSCODE");
+		}
+	
+	
+
+	});
+
+	function updateWebviewContent() {
+		if ( !webviewPanel )
+			return;
+		let editor = vscode.window.activeTextEditor;
+		if ( !editor )
+			return;
+		
+		let document = editor.document;
+		let selection = editor.selection;
+		if ( !selection || !document )
+			return;
+		if ( !isDocumentAthenaDB(document) )
+			return;
+			
+		let dbFile = ensureDocumentAthenaDbFile(document);
+		let dbLine = selection.start.line <= dbFile.lines.length ? dbFile.lines[selection.start.line] : null;
+		if ( !dbLine )
+			return;
+
+		webviewPanelEditor = editor;
+		webviewPanelLineNum = editor.selection.start.line;
+		webviewPanelActiveParam = dbLine.getParamIdxAtPosition(editor.selection.start);
+		webviewPanel.webview.html = dbFile.parentDb.explainLine(dbLine, true, selection.start);
+	}
 
 	function syncWithAthena() {
 		function replaceBetween(src : string, after : string, before : string, replacement : string) : string {
@@ -3069,7 +4138,7 @@ export function activate(context: vscode.ExtensionContext) {
 		});
 
 		// Write completions.txt functions
-		let scriptCppPath = getConfValOrThrow("scriptCppPath", "script.cpp path");
+		let scriptCppPath = athenaDir + "/src/map/script.cpp";
 		let fileContentStr : string = fs.readFileSync(scriptCppPath).toString();
 		let startScriptFunctionDefIndex = fileContentStr.indexOf("struct script_function buildin_func[] = {");
 		let funcNames = "";
@@ -3119,6 +4188,10 @@ export function activate(context: vscode.ExtensionContext) {
 			});
 		}
 
+
+		if ( !fs.existsSync(completionsTxtDir) )
+			fs.mkdirSync(completionsTxtDir);
+		
 		fs.writeFileSync(completionsTxtFn, completionsTxt);
 
 		// Write constant names to syntax file, for syntax highlighting
@@ -3161,7 +4234,10 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	let activation_time = new Date().getTime() - tstart;
-	console.log("Initialization fully complete in " + activation_time + " ms (item_db: "+ item_db_time +" ms, mob_db: "+ mob_db_time +" ms)");
+	getAutoLoadedDatabases().forEach(db => {
+		console.log(db.constructor.name + ": " + db.constructionTime + " ms");
+	});
+	console.log("Initialization fully complete in " + activation_time + " ms.");
 }
 
 function getKeyValueLineId(document : vscode.TextDocument, line : vscode.TextLine) : number | undefined {

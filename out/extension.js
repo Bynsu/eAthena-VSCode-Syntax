@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
+const fs = require("fs");
+const iconv = require("iconv-lite");
 const vscode = require("vscode");
 let itemDB;
 let mobDB;
@@ -9,26 +11,31 @@ let mobSkillDB;
 let questDB;
 let skillDB;
 let skillCastDB;
+let itemTradeDB;
 let scriptFunctionDB = new Map();
 let constDB = new Map();
 let forceDbColumnHighlight = new Map();
 let forceDbColumnHints = new Map();
-let fs = require('fs');
-let iconv = require('iconv-lite');
 let codepage = "win1252";
-const is_rAthena = true;
+let is_rAthena = false;
 const languageId = "eAthena";
+const languageIdLowerCase = "eathena";
 let documentToDecorationTypes = new Map();
 let documentToAthenaDBFile = new Map();
 // NOTE: need to change wordPattern in language-configuration.json if we change here
 let wordPattern = new RegExp("(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\\"\\,\\<\\>\\/\\?\\s]+)");
 let serverQuestDbPath;
+let athenaDir;
 let athenaNpcDir;
 let athenaDbDir;
 let wordSeparators;
 let itemImageURL;
 let mobImageURL;
 let skillImageURL;
+let webviewPanel;
+let webviewPanelEditor;
+let webviewPanelLineNum;
+let webviewPanelActiveParam;
 class AthenaConst {
     constructor(name, val) {
         this.name = name;
@@ -42,19 +49,20 @@ function fileNamesEqual(fn1, fn2) {
     return formatFileName(fn1) == formatFileName(fn2);
 }
 function getAutoLoadedDatabases() {
-    return [itemDB, mobDB, questDB, skillDB, skillCastDB, mobSkillDB];
+    return [itemDB, mobDB, questDB, skillDB, skillCastDB, mobSkillDB, itemTradeDB];
 }
 function initDocumentAthenaDbFile(document) {
     // In case of special databases we just update lines of existing files.
     let autoLoadedDatabases = getAutoLoadedDatabases();
-    autoLoadedDatabases.forEach(db => {
-        let dbFile = db.findFileByFilePath(document.fileName);
+    for (let i = 0; i < autoLoadedDatabases.length; i++) { // no foreach to allow preemptive return
+        let dbFile = autoLoadedDatabases[i].findFileByFilePath(document.fileName);
         if (dbFile) {
             dbFile.updateLines(document.getText(), true);
             return dbFile;
         }
-    });
+    }
     // Otherwise we create a new temporary DB and cache it
+    // Guess DB type by file name
     let db;
     if (document.fileName.endsWith("item_db.txt") || document.fileName.endsWith("item_db2.txt"))
         db = new AthenaItemDB([document.fileName]);
@@ -62,12 +70,14 @@ function initDocumentAthenaDbFile(document) {
         db = new AthenaMobDB([document.fileName]);
     else if (document.fileName.endsWith("quest_db.txt"))
         db = new AthenaQuestDB([document.fileName]);
+    else if (document.fileName.endsWith("mob_skill_db.txt") || document.fileName.endsWith("mob_skill_db2.txt")) // needs to be before skill_db to avoid mistaking mob_skill_db for skill_db
+        db = new AthenaMobSkillDB([document.fileName]);
     else if (document.fileName.endsWith("skill_db.txt"))
         db = new AthenaSkillDB(document.fileName);
     else if (document.fileName.endsWith("skill_cast_db.txt"))
         db = new AthenaSkillCastDB(document.fileName);
-    else if (document.fileName.endsWith("mob_skill_db.txt") || document.fileName.endsWith("mob_skill_db2.txt"))
-        db = new AthenaMobSkillDB([document.fileName]);
+    else if (document.fileName.endsWith("item_trade.txt"))
+        db = new AthenaItemTradeDB(document.fileName);
     else
         db = new AthenaDB([document.fileName]);
     documentToAthenaDBFile.set(document, db.files[0]);
@@ -81,6 +91,13 @@ function ensureDocumentAthenaDbFile(document) {
             return f;
     }
     return documentToAthenaDBFile.get(document) || initDocumentAthenaDbFile(document);
+}
+function makeHTMLLink(visibleText, filePath, lineNum0based, position0based) {
+    let uri = vscode.Uri.file(filePath);
+    let filePathWithPosition = uri + "#" + (lineNum0based + 1);
+    if (position0based)
+        filePathWithPosition += "," + (position0based + 1);
+    return "<a href='#' onclick='selectParameter(\"" + visibleText + "\");' id='" + visibleText + "'>" + visibleText + "</a>";
 }
 function makeMarkdownLink(visibleText, filePath, lineNum0based, position0based) {
     let uri = vscode.Uri.file(filePath);
@@ -98,22 +115,6 @@ function isWhitespace(str) {
             return false;
     return true;
 }
-function trimString(str) {
-    return str.trim();
-    // ����� � ����� ����������� ���������� ��� ������� string.trim()?
-    // let start;
-    // for ( start = 0; start < str.length; start++ )
-    // 	if ( !isWhitespace(str.charAt(start)) )
-    // 		break;
-    // let end; 
-    // for ( end = str.length - 1; end > start; end-- )
-    // 	if ( !isWhitespace(str.charAt(end)) )
-    // 		break;
-    // if ( end < start )
-    // 	return "";
-    // else
-    // 	return str.substring(start, end+1);
-}
 class AthenaDBLine {
     constructor(filePath, lineNum, line) {
         this.params = new Array(0);
@@ -129,14 +130,15 @@ class AthenaDBLine {
                 comment = true;
                 break;
             }
-            if (line.charAt(i) == '\"') {
+            let c = line.charAt(i);
+            if (c == '\"') {
                 while (i < line.length) {
                     i++;
                     if (line.charAt(i) == '\"' && line.charAt(i - 1) != '\"')
                         break;
                 }
             }
-            else if (line.charAt(i) == '{') {
+            else if (c == '{') {
                 let curlyLevel = 1;
                 while (curlyLevel > 0 && i < line.length) {
                     i++;
@@ -146,7 +148,7 @@ class AthenaDBLine {
                         curlyLevel--;
                 }
             }
-            else if (line.charAt(i) == ',') {
+            else if (c == ',') {
                 this.params.push(line.substring(paramStart, i).trim());
                 this.paramRanges.push(new vscode.Range(lineNum, paramStart, lineNum, i));
                 paramStart = i + 1;
@@ -172,6 +174,16 @@ class AthenaDBLine {
     getParamByIndex(index) {
         return index < this.params.length ? this.params[index] : undefined;
     }
+    getIntParamByIndex(index) {
+        let val = this.getParamByIndex(index);
+        return val ? parseInt(val) : undefined;
+    }
+    getParamIdxAtPosition(position) {
+        for (let i = 0; i < this.paramRanges.length; i++)
+            if (this.paramRanges[i].contains(position))
+                return i;
+        return undefined;
+    }
 }
 class AthenaDBFile {
     constructor(parentDb, filePath) {
@@ -183,6 +195,7 @@ class AthenaDBFile {
         this.parentDb = parentDb;
         this.filePath = filePath;
         this.lines = [];
+        this.symbols = [];
         let fileContentBytes = fs.readFileSync(filePath);
         let fileContent = iconv.decode(fileContentBytes, codepage);
         this.updateLines(fileContent, false);
@@ -218,15 +231,34 @@ class AthenaDBFile {
             }
         }
     }
-    updateLines(text, rebuildIndex) {
+    updateLines(text, rebuildParentDbIndex) {
         this.lines = new Array(0);
         let strLines = text.split('\n');
         for (let i = 0; i < strLines.length; i++) {
             let dbLine = this.createLine(this.filePath, i, strLines[i]);
             this.lines.push(dbLine);
         }
-        if (rebuildIndex)
+        this.symbols = [];
+        this.lines.forEach(l => {
+            let label = this.parentDb.getSymbolLabelForLine(l);
+            if (label) {
+                // let symbol = new vscode.SymbolInformation(label,
+                // 	vscode.SymbolKind.Variable,
+                // 	this.filePath,
+                // 	new vscode.Location(vscode.Uri.file(this.filePath), new vscode.Range(l.paramRanges[0].start, l.paramRanges[l.paramRanges.length-1].end)));
+                let range = new vscode.Range(l.paramRanges[0].start, l.paramRanges[l.paramRanges.length - 1].end);
+                let symbol = new vscode.SymbolInformation(label, vscode.SymbolKind.Variable, range, vscode.Uri.file(this.filePath));
+                this.symbols.push(symbol);
+            }
+        });
+        if (rebuildParentDbIndex)
             this.parentDb.rebuildIndex();
+    }
+    getParamIdxAtPosition(position) {
+        if (position.line < 0 || position.line >= this.lines.length)
+            return undefined;
+        let line = this.lines[position.line];
+        return line.getParamIdxAtPosition(position);
     }
 }
 class AthenaDB {
@@ -234,11 +266,15 @@ class AthenaDB {
         this.idToDbLine = new Map();
         this.nameToDbLine = new Map();
         this.alreadyExplainingLine = false; // to display short descriptions for each param if explaining line
+        let startTime = new Date().getTime();
         this.files = [];
         this.keyIndex = keyIndex || 0;
+        this.nameIndex = nameIndex || 1;
+        // Initialize
         filePaths.forEach(filePath => {
             this.files.push(this.createFile(this, filePath));
         });
+        // Set parameter names
         if (lineDef)
             this.paramNames = lineDef.split(',');
         else {
@@ -260,25 +296,18 @@ class AthenaDB {
                 this.paramNames = paramNamesLine.substr(2).trim().split(",");
             else
                 this.paramNames = new Array();
+            for (let i = 0; i < this.paramNames.length; i++)
+                this.paramNames[i] = this.paramNames[i].trim();
         }
-        if (!nameIndex) {
-            if (!is_rAthena && filePaths[0].endsWith("skill_cast_db.txt") || filePaths[0].endsWith("skill_cast_db2.txt"))
-                this.nameIndex = 8;
-            else if (filePaths[0].endsWith("skill_db.txt") || filePaths[0].endsWith("skill_db2.txt") && !(filePaths[0].endsWith("mob_skill_db.txt") || filePaths[0].endsWith("mob_skill_db2.txt")))
-                this.nameIndex = this.getParamIndex("name");
-            else
-                this.nameIndex = 1;
-        }
-        else
-            this.nameIndex = nameIndex;
         this.rebuildIndex();
+        this.constructionTime = new Date().getTime() - startTime;
     }
     createFile(db, filePath) {
         return new AthenaDBFile(db, filePath);
     }
     rebuildIndex() {
         this.idToDbLine.clear();
-        this.nameToDbLine.clear;
+        this.nameToDbLine.clear();
         this.files.forEach(f => {
             f.lines.forEach(l => {
                 if (this.keyIndex < l.params.length && l.params[this.keyIndex])
@@ -303,7 +332,7 @@ class AthenaDB {
                 return line.params[i];
         return "";
     }
-    explainParamByLineSub(line, paramIdx, modifiedValue) {
+    explainParamByLineSub(line, paramIdx, modifiedValue, html) {
         let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : ("param_" + paramIdx);
         let position = line.paramRanges[paramIdx].start;
         let unmodifiedParamVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
@@ -312,36 +341,65 @@ class AthenaDB {
             if (iParamVal.toString() == modifiedValue)
                 modifiedValue = iParamVal.toLocaleString();
         }
-        return makeMarkdownLink(paramName, line.filePath, position.line, position.character) + " : " + modifiedValue;
+        return html ?
+            makeHTMLLink(paramName, line.filePath, position.line, position.character) + ": " + modifiedValue
+            : makeMarkdownLink(paramName, line.filePath, position.line, position.character) + " : " + modifiedValue;
     }
-    explainParamByLine(line, paramIdx) {
+    explainParamByLine(line, paramIdx, html) {
         let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
         let iParamVal = parseInt(paramVal);
         if (iParamVal.toString() == paramVal)
             paramVal = iParamVal.toLocaleString();
-        return this.explainParamByLineSub(line, paramIdx, paramVal);
+        return this.explainParamByLineSub(line, paramIdx, paramVal, html);
     }
-    explainLine(line) {
+    explainLine(line, html, cursorPosition) {
         this.alreadyExplainingLine = true;
         let maxLength = Math.max(this.paramNames.length, line.params.length);
         let ret = "";
+        if (html)
+            ret += `<!DOCTYPE html>
+			<html lang="en">
+			<head>
+				<meta charset="UTF-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<title>Athena Line Preview</title>
+			</head>
+			<body>`;
+        let activeParam = undefined;
+        if (cursorPosition != undefined)
+            activeParam = line.getParamIdxAtPosition(cursorPosition);
         for (let i = 0; i < maxLength; i++) {
-            // let paramName = ( i < this.paramNames.length ) ? this.paramNames[i] : "?";
             let paramVal = (i < line.params.length) ? line.params[i].trim() : "";
             if (!paramVal || paramVal == "{}")
                 continue;
             if (i != 0)
-                ret += "  \n"; //ret += ", ";
-            ret += this.explainParamByLine(line, i);
+                ret += html ? "<br>" : "  \n";
+            if (html && activeParam != undefined && i == activeParam)
+                ret += "<b>";
+            ret += this.explainParamByLine(line, i, html);
+            if (html && activeParam != undefined && i == activeParam)
+                ret += "</b>";
         }
         this.alreadyExplainingLine = false;
+        if (html)
+            ret += `
+			<script>
+			const vscode = acquireVsCodeApi();
+
+			function selectParameter(paramName) {
+				vscode.postMessage({
+					command: 'selectParameter',
+					text: paramName
+				});
+			};
+			</script>
+			</body>
+				</html>`;
         return ret;
     }
     findFileByFilePath(filePath) {
         return this.files.find(f => {
             let ret = fileNamesEqual(f.filePath, filePath);
-            // if ( ret )
-            // 	console.log("file " + filePath + " have been found.");
             return ret;
         });
     }
@@ -353,7 +411,7 @@ class AthenaDB {
         else
             return undefined;
     }
-    getParamDocumentation(paramName) {
+    getParamDocumentation(paramIdx) {
         return undefined;
     }
     // hexType = 0: show only decimal
@@ -375,6 +433,56 @@ class AthenaDB {
             }
         }
         return paramDocumentation;
+    }
+}
+var AthenaItemTradeDBTradeMask;
+(function (AthenaItemTradeDBTradeMask) {
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["NODROP"] = 1] = "NODROP";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["NOTRADE"] = 2] = "NOTRADE";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["ALLOW_PARTNER_TRADE"] = 4] = "ALLOW_PARTNER_TRADE";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["NOSELLNPC"] = 8] = "NOSELLNPC";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["NOCART"] = 16] = "NOCART";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["NOSTORAGE"] = 32] = "NOSTORAGE";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["NOGUILDSTORAGE"] = 64] = "NOGUILDSTORAGE";
+    AthenaItemTradeDBTradeMask[AthenaItemTradeDBTradeMask["ALLOW_DROP_INSTANCE_TRANSFER"] = 128] = "ALLOW_DROP_INSTANCE_TRANSFER";
+})(AthenaItemTradeDBTradeMask || (AthenaItemTradeDBTradeMask = {}));
+var rAthenaItemTradeDBTradeMask;
+(function (rAthenaItemTradeDBTradeMask) {
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NODROP"] = 1] = "NODROP";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOTRADE"] = 2] = "NOTRADE";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["ALLOW_PARTNER_TRADE"] = 4] = "ALLOW_PARTNER_TRADE";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOSELLNPC"] = 8] = "NOSELLNPC";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOCART"] = 16] = "NOCART";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOSTORAGE"] = 32] = "NOSTORAGE";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOGUILDSTORAGE"] = 64] = "NOGUILDSTORAGE";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOMAIL"] = 128] = "NOMAIL";
+    rAthenaItemTradeDBTradeMask[rAthenaItemTradeDBTradeMask["NOAUCTION"] = 256] = "NOAUCTION";
+})(rAthenaItemTradeDBTradeMask || (rAthenaItemTradeDBTradeMask = {}));
+var AthenaItemTradeDBColumns;
+(function (AthenaItemTradeDBColumns) {
+    AthenaItemTradeDBColumns[AthenaItemTradeDBColumns["ItemId"] = 0] = "ItemId";
+    AthenaItemTradeDBColumns[AthenaItemTradeDBColumns["TradeMask"] = 1] = "TradeMask";
+    AthenaItemTradeDBColumns[AthenaItemTradeDBColumns["GmOverride"] = 2] = "GmOverride";
+})(AthenaItemTradeDBColumns || (AthenaItemTradeDBColumns = {}));
+class AthenaItemTradeDB extends AthenaDB {
+    constructor(fileName) {
+        super([fileName || (athenaDbDir + "/item_trade.txt")]);
+    }
+    explainParamByLine(line, paramIdx, html) {
+        let paramVal = line.getParamByIndex(paramIdx);
+        if (!paramVal)
+            return "";
+        if (paramIdx == AthenaItemTradeDBColumns.ItemId) {
+            paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine, html);
+        }
+        else if (paramIdx == AthenaItemTradeDBColumns.TradeMask) {
+            paramVal = explainBinMaskEnumParam(paramVal, is_rAthena ? rAthenaItemTradeDBTradeMask : AthenaItemTradeDBTradeMask);
+        }
+        return super.explainParamByLineSub(line, paramIdx, paramVal, html);
+    }
+    getParamDocumentation(paramIdx) {
+        if (paramIdx == AthenaItemTradeDBColumns.TradeMask)
+            return this.enumToParamDocumentation(is_rAthena ? rAthenaItemTradeDBTradeMask : AthenaItemTradeDBTradeMask, 0);
     }
 }
 var EQP;
@@ -403,6 +511,31 @@ var EQP;
     EQP[EQP["ACC_R_COSTUME"] = 2097152] = "ACC_R_COSTUME";
 })(EQP || (EQP = {}));
 ;
+var IT_rA;
+(function (IT_rA) {
+    IT_rA[IT_rA["HEALING"] = 0] = "HEALING";
+    IT_rA[IT_rA["UNKNOWN"] = 1] = "UNKNOWN";
+    IT_rA[IT_rA["USABLE"] = 2] = "USABLE";
+    IT_rA[IT_rA["ETC"] = 3] = "ETC";
+    IT_rA[IT_rA["WEAPON"] = 4] = "WEAPON";
+    IT_rA[IT_rA["ARMOR"] = 5] = "ARMOR";
+    IT_rA[IT_rA["CARD"] = 6] = "CARD";
+    IT_rA[IT_rA["PETEGG"] = 7] = "PETEGG";
+    IT_rA[IT_rA["PETARMOR"] = 8] = "PETARMOR";
+    IT_rA[IT_rA["UNKNOWN2"] = 9] = "UNKNOWN2";
+    IT_rA[IT_rA["AMMO"] = 10] = "AMMO";
+    IT_rA[IT_rA["DELAYCONSUME"] = 11] = "DELAYCONSUME";
+    IT_rA[IT_rA["SHADOWGEAR"] = 12] = "SHADOWGEAR";
+    //IT_ARMORMB			= 0x0d
+    //IT_ARMORTMB			= 0x0e
+    //IT_GUN				= 0x0f
+    //IT_AMMO				= 0x10
+    IT_rA[IT_rA["THROWWEAPON"] = 17] = "THROWWEAPON";
+    IT_rA[IT_rA["CASH"] = 18] = "CASH";
+    IT_rA[IT_rA["CANNONBALL"] = 19] = "CANNONBALL";
+    IT_rA[IT_rA["MAX"] = 20] = "MAX";
+})(IT_rA || (IT_rA = {}));
+;
 var IT;
 (function (IT) {
     IT[IT["HEALING"] = 0] = "HEALING";
@@ -428,6 +561,9 @@ var IT;
     IT[IT["MAX"] = 20] = "MAX";
 })(IT || (IT = {}));
 ;
+function getITEnumType() {
+    return is_rAthena ? IT_rA : IT;
+}
 var JOB;
 (function (JOB) {
     JOB[JOB["NOVICE"] = 0] = "NOVICE";
@@ -754,6 +890,41 @@ var item_jobmask;
     item_jobmask[item_jobmask["REBELLION"] = 1073741824] = "REBELLION";
     item_jobmask[item_jobmask["SUMMONER"] = -2147483648] = "SUMMONER";
 })(item_jobmask || (item_jobmask = {}));
+var item_jobmask_rA;
+(function (item_jobmask_rA) {
+    item_jobmask_rA[item_jobmask_rA["Novice"] = 1] = "Novice";
+    item_jobmask_rA[item_jobmask_rA["Swordman"] = 2] = "Swordman";
+    item_jobmask_rA[item_jobmask_rA["Magician"] = 4] = "Magician";
+    item_jobmask_rA[item_jobmask_rA["Archer"] = 8] = "Archer";
+    item_jobmask_rA[item_jobmask_rA["Acolyte"] = 16] = "Acolyte";
+    item_jobmask_rA[item_jobmask_rA["Merchant"] = 32] = "Merchant";
+    item_jobmask_rA[item_jobmask_rA["Thief"] = 64] = "Thief";
+    item_jobmask_rA[item_jobmask_rA["Knight"] = 128] = "Knight";
+    item_jobmask_rA[item_jobmask_rA["Priest"] = 256] = "Priest";
+    item_jobmask_rA[item_jobmask_rA["Wizard"] = 512] = "Wizard";
+    item_jobmask_rA[item_jobmask_rA["Blacksmith"] = 1024] = "Blacksmith";
+    item_jobmask_rA[item_jobmask_rA["Hunter"] = 2048] = "Hunter";
+    item_jobmask_rA[item_jobmask_rA["Assassin"] = 4096] = "Assassin";
+    //Unused         = 0x00002000,
+    item_jobmask_rA[item_jobmask_rA["Crusader"] = 16384] = "Crusader";
+    item_jobmask_rA[item_jobmask_rA["Monk"] = 32768] = "Monk";
+    item_jobmask_rA[item_jobmask_rA["Sage"] = 65536] = "Sage";
+    item_jobmask_rA[item_jobmask_rA["Rogue"] = 131072] = "Rogue";
+    item_jobmask_rA[item_jobmask_rA["Alchemist"] = 262144] = "Alchemist";
+    item_jobmask_rA[item_jobmask_rA["BardDancer"] = 524288] = "BardDancer";
+    //Unused         = 0x00100000,
+    item_jobmask_rA[item_jobmask_rA["Taekwon"] = 2097152] = "Taekwon";
+    item_jobmask_rA[item_jobmask_rA["StarGladiator"] = 4194304] = "StarGladiator";
+    item_jobmask_rA[item_jobmask_rA["SoulLinker"] = 8388608] = "SoulLinker";
+    item_jobmask_rA[item_jobmask_rA["Gunslinger"] = 16777216] = "Gunslinger";
+    item_jobmask_rA[item_jobmask_rA["Ninja"] = 33554432] = "Ninja";
+    item_jobmask_rA[item_jobmask_rA["Gangsi"] = 67108864] = "Gangsi";
+    item_jobmask_rA[item_jobmask_rA["DeathKnight"] = 134217728] = "DeathKnight";
+    item_jobmask_rA[item_jobmask_rA["DarkCollector"] = 268435456] = "DarkCollector";
+    item_jobmask_rA[item_jobmask_rA["KagerouOboro"] = 536870912] = "KagerouOboro";
+    item_jobmask_rA[item_jobmask_rA["Rebellion"] = 1073741824] = "Rebellion";
+    item_jobmask_rA[item_jobmask_rA["Summoner"] = 2147483648] = "Summoner";
+})(item_jobmask_rA || (item_jobmask_rA = {}));
 var weapon_type;
 (function (weapon_type) {
     weapon_type[weapon_type["FIST"] = 0] = "FIST";
@@ -807,6 +978,8 @@ var MD;
     MD[MD["CHANGETARGET_MELEE"] = 4096] = "CHANGETARGET_MELEE";
     MD[MD["CHANGETARGET_CHASE"] = 8192] = "CHANGETARGET_CHASE";
     MD[MD["TARGETWEAK"] = 16384] = "TARGETWEAK";
+    MD[MD["PHYSICAL_IMMUNE"] = 65536] = "PHYSICAL_IMMUNE";
+    MD[MD["MAGICAL_IMMUNE"] = 131072] = "MAGICAL_IMMUNE";
 })(MD || (MD = {}));
 var RC;
 (function (RC) {
@@ -826,6 +999,21 @@ var RC;
     RC[RC["MAX"] = 13] = "MAX";
 })(RC || (RC = {}));
 ;
+var RC_rA;
+(function (RC_rA) {
+    RC_rA[RC_rA["FORMLESS"] = 0] = "FORMLESS";
+    RC_rA[RC_rA["UNDEAD"] = 1] = "UNDEAD";
+    RC_rA[RC_rA["BRUTE"] = 2] = "BRUTE";
+    RC_rA[RC_rA["PLANT"] = 3] = "PLANT";
+    RC_rA[RC_rA["INSECT"] = 4] = "INSECT";
+    RC_rA[RC_rA["FISH"] = 5] = "FISH";
+    RC_rA[RC_rA["DEMON"] = 6] = "DEMON";
+    RC_rA[RC_rA["DEMIHUMAN"] = 7] = "DEMIHUMAN";
+    RC_rA[RC_rA["ANGEL"] = 8] = "ANGEL";
+    RC_rA[RC_rA["DRAGON"] = 9] = "DRAGON";
+    RC_rA[RC_rA["PLAYER"] = 10] = "PLAYER";
+    RC_rA[RC_rA["ALL"] = 11] = "ALL";
+})(RC_rA || (RC_rA = {}));
 var UNIT_SIZE;
 (function (UNIT_SIZE) {
     UNIT_SIZE[UNIT_SIZE["SMALL"] = 0] = "SMALL";
@@ -860,6 +1048,93 @@ var item_upper;
     item_upper[item_upper["babyThird"] = 32] = "babyThird";
 })(item_upper || (item_upper = {}));
 ;
+var emotion_type;
+(function (emotion_type) {
+    emotion_type[emotion_type["E_GASP"] = 0] = "E_GASP";
+    emotion_type[emotion_type["E_WHAT"] = 1] = "E_WHAT";
+    emotion_type[emotion_type["E_HO"] = 2] = "E_HO";
+    emotion_type[emotion_type["E_LV"] = 3] = "E_LV";
+    emotion_type[emotion_type["E_SWT"] = 4] = "E_SWT";
+    emotion_type[emotion_type["E_IC"] = 5] = "E_IC";
+    emotion_type[emotion_type["E_AN"] = 6] = "E_AN";
+    emotion_type[emotion_type["E_AG"] = 7] = "E_AG";
+    emotion_type[emotion_type["E_CASH"] = 8] = "E_CASH";
+    emotion_type[emotion_type["E_DOTS"] = 9] = "E_DOTS";
+    emotion_type[emotion_type["E_SCISSORS"] = 10] = "E_SCISSORS";
+    emotion_type[emotion_type["E_ROCK"] = 11] = "E_ROCK";
+    emotion_type[emotion_type["E_PAPER"] = 12] = "E_PAPER";
+    emotion_type[emotion_type["E_KOREA"] = 13] = "E_KOREA";
+    emotion_type[emotion_type["E_LV2"] = 14] = "E_LV2";
+    emotion_type[emotion_type["E_THX"] = 15] = "E_THX";
+    emotion_type[emotion_type["E_WAH"] = 16] = "E_WAH";
+    emotion_type[emotion_type["E_SRY"] = 17] = "E_SRY";
+    emotion_type[emotion_type["E_HEH"] = 18] = "E_HEH";
+    emotion_type[emotion_type["E_SWT2"] = 19] = "E_SWT2";
+    emotion_type[emotion_type["E_HMM"] = 20] = "E_HMM";
+    emotion_type[emotion_type["E_NO1"] = 21] = "E_NO1";
+    emotion_type[emotion_type["E_NO"] = 22] = "E_NO";
+    emotion_type[emotion_type["E_OMG"] = 23] = "E_OMG";
+    emotion_type[emotion_type["E_OH"] = 24] = "E_OH";
+    emotion_type[emotion_type["E_X"] = 25] = "E_X";
+    emotion_type[emotion_type["E_HLP"] = 26] = "E_HLP";
+    emotion_type[emotion_type["E_GO"] = 27] = "E_GO";
+    emotion_type[emotion_type["E_SOB"] = 28] = "E_SOB";
+    emotion_type[emotion_type["E_GG"] = 29] = "E_GG";
+    emotion_type[emotion_type["E_KIS"] = 30] = "E_KIS";
+    emotion_type[emotion_type["E_KIS2"] = 31] = "E_KIS2";
+    emotion_type[emotion_type["E_PIF"] = 32] = "E_PIF";
+    emotion_type[emotion_type["E_OK"] = 33] = "E_OK";
+    emotion_type[emotion_type["E_MUTE"] = 34] = "E_MUTE";
+    emotion_type[emotion_type["E_INDONESIA"] = 35] = "E_INDONESIA";
+    emotion_type[emotion_type["E_BZZ"] = 36] = "E_BZZ";
+    emotion_type[emotion_type["E_RICE"] = 37] = "E_RICE";
+    emotion_type[emotion_type["E_AWSM"] = 38] = "E_AWSM";
+    emotion_type[emotion_type["E_MEH"] = 39] = "E_MEH";
+    emotion_type[emotion_type["E_SHY"] = 40] = "E_SHY";
+    emotion_type[emotion_type["E_PAT"] = 41] = "E_PAT";
+    emotion_type[emotion_type["E_MP"] = 42] = "E_MP";
+    emotion_type[emotion_type["E_SLUR"] = 43] = "E_SLUR";
+    emotion_type[emotion_type["E_COM"] = 44] = "E_COM";
+    emotion_type[emotion_type["E_YAWN"] = 45] = "E_YAWN";
+    emotion_type[emotion_type["E_GRAT"] = 46] = "E_GRAT";
+    emotion_type[emotion_type["E_HP"] = 47] = "E_HP";
+    emotion_type[emotion_type["E_PHILIPPINES"] = 48] = "E_PHILIPPINES";
+    emotion_type[emotion_type["E_MALAYSIA"] = 49] = "E_MALAYSIA";
+    emotion_type[emotion_type["E_SINGAPORE"] = 50] = "E_SINGAPORE";
+    emotion_type[emotion_type["E_BRAZIL"] = 51] = "E_BRAZIL";
+    emotion_type[emotion_type["E_FLASH"] = 52] = "E_FLASH";
+    emotion_type[emotion_type["E_SPIN"] = 53] = "E_SPIN";
+    emotion_type[emotion_type["E_SIGH"] = 54] = "E_SIGH";
+    emotion_type[emotion_type["E_PROUD"] = 55] = "E_PROUD";
+    emotion_type[emotion_type["E_LOUD"] = 56] = "E_LOUD";
+    emotion_type[emotion_type["E_OHNOES"] = 57] = "E_OHNOES";
+    emotion_type[emotion_type["E_DICE1"] = 58] = "E_DICE1";
+    emotion_type[emotion_type["E_DICE2"] = 59] = "E_DICE2";
+    emotion_type[emotion_type["E_DICE3"] = 60] = "E_DICE3";
+    emotion_type[emotion_type["E_DICE4"] = 61] = "E_DICE4";
+    emotion_type[emotion_type["E_DICE5"] = 62] = "E_DICE5";
+    emotion_type[emotion_type["E_DICE6"] = 63] = "E_DICE6";
+    emotion_type[emotion_type["E_INDIA"] = 64] = "E_INDIA";
+    emotion_type[emotion_type["E_LOOSER"] = 65] = "E_LOOSER";
+    emotion_type[emotion_type["E_RUSSIA"] = 66] = "E_RUSSIA";
+    emotion_type[emotion_type["E_VIRGIN"] = 67] = "E_VIRGIN";
+    emotion_type[emotion_type["E_PHONE"] = 68] = "E_PHONE";
+    emotion_type[emotion_type["E_MAIL"] = 69] = "E_MAIL";
+    emotion_type[emotion_type["E_CHINESE"] = 70] = "E_CHINESE";
+    emotion_type[emotion_type["E_SIGNAL"] = 71] = "E_SIGNAL";
+    emotion_type[emotion_type["E_SIGNAL2"] = 72] = "E_SIGNAL2";
+    emotion_type[emotion_type["E_SIGNAL3"] = 73] = "E_SIGNAL3";
+    emotion_type[emotion_type["E_HUM"] = 74] = "E_HUM";
+    emotion_type[emotion_type["E_ABS"] = 75] = "E_ABS";
+    emotion_type[emotion_type["E_OOPS"] = 76] = "E_OOPS";
+    emotion_type[emotion_type["E_SPIT"] = 77] = "E_SPIT";
+    emotion_type[emotion_type["E_ENE"] = 78] = "E_ENE";
+    emotion_type[emotion_type["E_PANIC"] = 79] = "E_PANIC";
+    emotion_type[emotion_type["E_WHISP"] = 80] = "E_WHISP";
+    //
+    emotion_type[emotion_type["E_MAX"] = 81] = "E_MAX";
+})(emotion_type || (emotion_type = {}));
+;
 function getEnumMemberNameByValue(iParamVal, typeEnum) {
     for (let member in typeEnum) {
         let num = parseInt(member);
@@ -893,21 +1168,27 @@ function explainBinMaskEnumParam(paramVal, typeEnum) {
         paramVal += " (" + paramExplanation + ")";
     return paramVal;
 }
-function explainItemIdParam(paramVal, full) {
+function explainItemIdParam(paramVal, full, html) {
     let iParamVal = parseInt(paramVal);
     if (iParamVal < 1)
         return paramVal;
     let itemDbLine = itemDB.idToDbLine.get(parseInt(paramVal));
     if (itemDbLine) {
         if (!full) {
-            if (AthenaItemDB.aegisNameParamIndex < itemDbLine.params.length)
-                paramVal += " " + itemDbLine.params[AthenaItemDB.aegisNameParamIndex];
+            if (itemDbParamIndex.AegisName < itemDbLine.params.length)
+                paramVal += " " + itemDbLine.params[itemDbParamIndex.AegisName];
             let imageURL = itemImageURL ? itemImageURL.replace("ITEMID", iParamVal.toString()) : iParamVal.toString();
-            paramVal = makeMarkdownLinkWithImage(itemDbLine, imageURL, 18, 18) + " " + paramVal;
+            if (html)
+                paramVal = "<img src=\"" + imageURL + "\">" + paramVal;
+            else
+                paramVal = makeMarkdownLinkWithImage(itemDbLine, imageURL, 18, 18) + " " + paramVal;
         }
         else {
-            paramVal += "  \n*ItemDB*  \n";
-            paramVal += itemDB.explainLine(itemDbLine);
+            if (html)
+                paramVal += "<br><br>ItemDB<br>";
+            else
+                paramVal += "   \n___  \n";
+            paramVal += itemDB.explainLine(itemDbLine, html);
         }
     }
     return paramVal;
@@ -916,7 +1197,7 @@ function isFullyNumericString(str) {
     let i = parseInt(str);
     return i.toString() == str;
 }
-function explainSkillIdOrTechNameParam(paramVal) {
+function explainSkillIdOrTechNameParam(paramVal, html) {
     let dbLine;
     let appendTechName = false;
     if (isFullyNumericString(paramVal)) {
@@ -933,7 +1214,11 @@ function explainSkillIdOrTechNameParam(paramVal) {
     if (!techName || !skillId)
         return paramVal;
     let url = skillImageURL ? skillImageURL.replace("SKILLID", skillId.toString()).replace("SKILLNAME", techName.toLowerCase().toString()) : "";
-    let ret = makeMarkdownLinkWithImage(dbLine, url, 18, 18) + " " + paramVal;
+    let ret;
+    if (html)
+        ret = "<img src=\"" + url + "\">" + paramVal;
+    else
+        ret = makeMarkdownLinkWithImage(dbLine, url, 18, 18) + " " + paramVal;
     if (appendTechName)
         ret += " (" + dbLine.getParamByIndex(skillDB.nameIndex) + ")";
     return ret;
@@ -989,87 +1274,274 @@ function loadConstDB(filePath, hppFilePath) {
         });
     }
 }
+class ItemDBParamIndex {
+    constructor() {
+        this.n = 0;
+        this.ID = this.n++;
+        this.AegisName = this.n++;
+        this.Name = this.n++;
+        this.RusName = is_rAthena ? undefined : this.n++;
+        this.Type = this.n++;
+        this.Buy = this.n++;
+        this.Sell = this.n++;
+        this.Weight = this.n++;
+        this.ATK = this.n++;
+        this.MATK = is_rAthena ? undefined : this.n++;
+        this.DEF = this.n++;
+        this.Range = this.n++;
+        this.Slots = this.n++;
+        this.Job = this.n++;
+        this.Upper = this.n++;
+        this.Gender = this.n++;
+        this.Loc = this.n++;
+        this.wLV = this.n++;
+        this.eLV = this.n++;
+        this.Refineable = this.n++;
+        this.View = this.n++;
+        this.Script = this.n++;
+        this.OnEquip_Script = this.n++;
+        this.OnUnequip_Script = this.n++;
+    }
+    visibleName() {
+        return (!is_rAthena && this.RusName !== undefined) ? this.RusName : this.Name;
+    }
+}
+let itemDbParamIndex;
 class AthenaItemDB extends AthenaDB {
     constructor(filePaths) {
         super(filePaths);
     }
-    explainParamByLine(line, paramIdx) {
-        const paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
+    explainParamByLine(line, paramIdx, html) {
         let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
-        if (paramName == "ID" || paramName == "// ID")
-            paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine);
-        else if (paramName == "Loc")
-            paramVal = explainBinMaskEnumParam(paramVal, EQP);
-        else if (paramName == "Type")
-            paramVal = explainEnumParam(paramVal, IT);
-        else if (paramName == "Job")
-            paramVal = explainBinMaskEnumParam(paramVal, item_jobmask);
-        else if (paramName == "Weight") {
-            paramVal = "" + (parseInt(paramVal) / 10);
+        switch (paramIdx) {
+            case itemDbParamIndex.ID:
+                paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine, html);
+                break;
+            case itemDbParamIndex.Loc:
+                paramVal = explainBinMaskEnumParam(paramVal, EQP);
+                break;
+            case itemDbParamIndex.Type:
+                paramVal = explainEnumParam(paramVal, getITEnumType());
+                break;
+            case itemDbParamIndex.Job:
+                paramVal = explainBinMaskEnumParam(paramVal, is_rAthena ? item_jobmask_rA : item_jobmask);
+                break;
+            case itemDbParamIndex.Weight:
+                paramVal = (parseInt(paramVal) / 10).toString();
+                break;
+            case itemDbParamIndex.View:
+                if (line.getIntParamByIndex(itemDbParamIndex.Type) == getITEnumType().WEAPON)
+                    paramVal = explainEnumParam(paramVal, weapon_type);
+                break;
+            case itemDbParamIndex.Upper:
+                paramVal = explainBinMaskEnumParam(paramVal, item_upper);
+                break;
+            case itemDbParamIndex.Script:
+            case itemDbParamIndex.OnEquip_Script:
+            case itemDbParamIndex.OnUnequip_Script:
+                let formattedScript = this.formatScript(paramVal);
+                if (html)
+                    paramVal = "<pre>" + formattedScript.replace(/\n/g, "<br>") + "</pre>";
+                else
+                    paramVal = new vscode.MarkdownString().appendCodeblock(formattedScript, languageIdLowerCase).value; // languageId eAthena with capital "A" doesn't work in this case for some reason
+                break;
         }
-        else if (paramName == "View") {
-            let typeIdx = -1;
-            for (let i = 0; i < this.paramNames.length; i++)
-                if (this.paramNames[i] == "Type") {
-                    typeIdx = i;
-                    break;
-                }
-            if (typeIdx != -1 && line.params.length >= typeIdx && parseInt(line.params[typeIdx]) == IT.WEAPON)
-                paramVal = explainEnumParam(paramVal, weapon_type);
-        }
-        else if (paramName == "Upper")
-            paramVal = explainBinMaskEnumParam(paramVal, item_upper);
-        return super.explainParamByLineSub(line, paramIdx, paramVal);
+        return super.explainParamByLineSub(line, paramIdx, paramVal, html);
     }
-    getParamDocumentation(paramName) {
-        if (paramName == "Loc")
-            return this.enumToParamDocumentation(EQP, 2);
-        else if (paramName == "Type")
-            return this.enumToParamDocumentation(IT, 0);
-        else if (paramName == "Job")
-            return this.enumToParamDocumentation(item_jobmask, 1);
-        else if (paramName == "View")
-            return "For hats: accessoryId, for weapons:  \n" + this.enumToParamDocumentation(weapon_type, 0);
-        else if (paramName == "Upper")
-            return this.enumToParamDocumentation(item_upper, 1);
+    getParamDocumentation(paramIdx) {
+        switch (paramIdx) {
+            case itemDbParamIndex.Loc:
+                return this.enumToParamDocumentation(EQP, 2);
+            case itemDbParamIndex.Type:
+                return this.enumToParamDocumentation(getITEnumType(), 0);
+            case itemDbParamIndex.Job:
+                return this.enumToParamDocumentation(is_rAthena ? item_jobmask_rA : item_jobmask, 1);
+            case itemDbParamIndex.View:
+                return "For hats: accessoryId, for weapons:  \n" + this.enumToParamDocumentation(weapon_type, 0);
+            case itemDbParamIndex.Upper:
+                return this.enumToParamDocumentation(item_upper, 1);
+        }
         return undefined;
     }
     getSymbolLabelForLine(l) {
-        let id = l.getParamByIndex(AthenaItemDB.itemIdParamIndex);
-        let aegisName = l.getParamByIndex(AthenaItemDB.aegisNameParamIndex);
-        let engName = l.getParamByIndex(AthenaItemDB.engNameParamIndex);
-        let rusName = l.getParamByIndex(AthenaItemDB.rusNameParamIndex);
-        if (!id || !aegisName || !engName || !rusName)
+        let id = l.getParamByIndex(itemDbParamIndex.ID);
+        let aegisName = l.getParamByIndex(itemDbParamIndex.AegisName);
+        let engName = l.getParamByIndex(itemDbParamIndex.Name);
+        let rusName = itemDbParamIndex.RusName ? l.getParamByIndex(itemDbParamIndex.RusName) : undefined;
+        if (!id || !aegisName || !engName)
             return undefined;
-        return id + ":" + aegisName + ":" + engName + ":" + rusName;
+        let ret = id + ":" + aegisName + ":" + engName;
+        if (rusName)
+            ret += ":" + rusName;
+        return ret;
+    }
+    explainLine(line, html, cursorPosition) {
+        let ret = super.explainLine(line, html, cursorPosition);
+        let itemId = line.getIntParamByIndex(itemDbParamIndex.ID);
+        if (itemId) {
+            let itemTradeLine = itemTradeDB.idToDbLine.get(itemId);
+            if (itemTradeLine) {
+                let tradeRestrictions = itemTradeDB.explainParamByLine(itemTradeLine, AthenaItemTradeDBColumns.TradeMask, html);
+                if (tradeRestrictions)
+                    ret += (html ? "<br>" : "  \n") + tradeRestrictions;
+            }
+        }
+        return ret;
+    }
+    formatScript(script) {
+        if (script.startsWith("{") && script.endsWith("}"))
+            script = script.substring(1, script.length - 1);
+        let formattedScript = "";
+        let indent = 0;
+        let i = 0;
+        // skip whitespace at start
+        for (i = 0; i < script.length; i++)
+            if (!isWhitespace(script.charAt(i)))
+                break;
+        for (; i < script.length; i++) {
+            let c = script.charAt(i);
+            if (c == "{") {
+                indent++;
+                formattedScript += "{\n" + "\t".repeat(indent);
+                // skip whitespace
+                i++;
+                for (; i < script.length; i++)
+                    if (!isWhitespace(script.charAt(i)))
+                        break;
+                i--;
+            }
+            else if (c == "}") {
+                indent--;
+                if (indent < 0)
+                    indent = 0;
+                if (formattedScript.charAt(formattedScript.length - 1) == "\t")
+                    formattedScript = formattedScript.substr(0, formattedScript.length - 1); // crop last tab to reduce indent
+                formattedScript += "}" + "\n" + "\t".repeat(indent);
+                // skip whitespace
+                i++;
+                for (; i < script.length; i++)
+                    if (!isWhitespace(script.charAt(i)))
+                        break;
+                i--;
+            }
+            else if (c == ";") {
+                formattedScript += ";\n" + "\t".repeat(indent);
+                // skip whitespace
+                i++;
+                for (; i < script.length; i++)
+                    if (!isWhitespace(script.charAt(i)))
+                        break;
+                i--;
+            }
+            else if (c == "\"") {
+                formattedScript += c;
+                i++;
+                for (; i < script.length; i++) {
+                    formattedScript += script.charAt(i);
+                    if (script.charAt(i) == "\"" && script.charAt(i - 1) != "\\")
+                        break;
+                }
+            }
+            else {
+                formattedScript += c;
+            }
+        }
+        formattedScript = formattedScript.trim();
+        return formattedScript;
     }
 }
-AthenaItemDB.itemIdParamIndex = 0;
-AthenaItemDB.aegisNameParamIndex = 1;
-AthenaItemDB.engNameParamIndex = 2;
-AthenaItemDB.rusNameParamIndex = 3;
+class MobDBParamIndex {
+    constructor() {
+        this.n = 0;
+        this.ID = this.n++;
+        this.Sprite_Name = this.n++;
+        this.kROName = this.n++;
+        this.iROName = this.n++;
+        this.RusName = is_rAthena ? undefined : this.n++;
+        this.LV = this.n++;
+        this.HP = this.n++;
+        this.SP = this.n++;
+        this.EXP = this.n++;
+        this.JEXP = this.n++;
+        this.Range1 = this.n++;
+        this.ATK1 = this.n++;
+        this.ATK2 = this.n++;
+        this.DEF = this.n++;
+        this.MDEF = this.n++;
+        this.STR = this.n++;
+        this.AGI = this.n++;
+        this.VIT = this.n++;
+        this.INT = this.n++;
+        this.DEX = this.n++;
+        this.LUK = this.n++;
+        this.Range2 = this.n++;
+        this.Range3 = this.n++;
+        this.Scale = this.n++;
+        this.Race = this.n++;
+        this.Element = this.n++;
+        this.Mode = this.n++;
+        this.Speed = this.n++;
+        this.aDelay = this.n++;
+        this.aMotion = this.n++;
+        this.dMotion = this.n++;
+        this.MEXP = this.n++;
+        this.MVP1id = this.n++;
+        this.MVP1per = this.n++;
+        this.MVP2id = this.n++;
+        this.MVP2per = this.n++;
+        this.MVP3id = this.n++;
+        this.MVP3per = this.n++;
+        this.Drop1id = this.n++;
+        this.Drop1per = this.n++;
+        this.Drop2id = this.n++;
+        this.Drop2per = this.n++;
+        this.Drop3id = this.n++;
+        this.Drop3per = this.n++;
+        this.Drop4id = this.n++;
+        this.Drop4per = this.n++;
+        this.Drop5id = this.n++;
+        this.Drop5per = this.n++;
+        this.Drop6id = this.n++;
+        this.Drop6per = this.n++;
+        this.Drop7id = this.n++;
+        this.Drop7per = this.n++;
+        this.Drop8id = this.n++;
+        this.Drop8per = this.n++;
+        this.Drop9id = this.n++;
+        this.Drop9per = this.n++;
+        this.DropCardid = this.n++;
+        this.DropCardper = this.n++;
+    }
+    visibleName() {
+        return (!is_rAthena && this.RusName !== undefined) ? this.RusName : this.kROName;
+    }
+}
+let mobDbParamIndex;
 class AthenaMobDB extends AthenaDB {
     constructor(filePaths) {
-        super(filePaths, undefined, AthenaMobDB.mobIdParamIndex);
+        super(filePaths, undefined, mobDbParamIndex.ID);
     }
-    explainParamByLine(line, paramIdx) {
-        let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
+    explainParamByLine(line, paramIdx, html) {
+        //let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
         let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
-        if (paramName == "ID") {
+        if (paramIdx == mobDbParamIndex.ID) {
             let iParamVal = parseInt(paramVal);
             if (iParamVal > 0) {
                 let mobDbLine = mobDB.idToDbLine.get(parseInt(paramVal));
                 if (mobDbLine) {
-                    if (AthenaMobDB.spriteNameParamIndex < mobDbLine.params.length)
-                        paramVal += " (" + mobDbLine.params[AthenaMobDB.spriteNameParamIndex] + ")";
+                    if (mobDbParamIndex.Sprite_Name < mobDbLine.params.length)
+                        paramVal += " (" + mobDbLine.params[mobDbParamIndex.Sprite_Name] + ")";
                     let url = mobImageURL ? mobImageURL.replace("MOBID", iParamVal.toString()) : "";
-                    paramVal = makeMarkdownLinkWithImage(mobDbLine, url, 32, 32) + " " + paramVal;
+                    if (html)
+                        paramVal = "<img src=\"" + url + "\">" + paramVal;
+                    else
+                        paramVal = makeMarkdownLinkWithImage(mobDbLine, url, 32, 32) + " " + paramVal;
                 }
             }
         }
-        else if (paramName == "Mode")
+        else if (paramIdx == mobDbParamIndex.Mode)
             paramVal = explainBinMaskEnumParam(paramVal, MD);
-        else if (paramName == "Element") {
+        else if (paramIdx == mobDbParamIndex.Element) {
             let iParamVal = parseInt(paramVal);
             let eleLv = Math.floor(iParamVal / 20);
             let eleNum = iParamVal % 10;
@@ -1077,41 +1549,69 @@ class AthenaMobDB extends AthenaDB {
             if (paramExplanation)
                 paramVal += " (" + paramExplanation + " " + eleLv + ")";
         }
-        else if (paramName == "Race")
-            paramVal = explainEnumParam(paramVal, RC);
-        else if (paramName == "Scale")
+        else if (paramIdx == mobDbParamIndex.Race)
+            paramVal = explainEnumParam(paramVal, is_rAthena ? RC_rA : RC);
+        else if (paramIdx == mobDbParamIndex.Scale)
             paramVal = explainEnumParam(paramVal, UNIT_SIZE);
-        else if (paramName.match("Drop[1-9]id") || paramName.match("MVP[1-9]id") || paramName == "DropCardid") {
-            paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine);
+        else if (paramIdx == mobDbParamIndex.Drop1id
+            || paramIdx == mobDbParamIndex.Drop2id
+            || paramIdx == mobDbParamIndex.Drop3id
+            || paramIdx == mobDbParamIndex.Drop4id
+            || paramIdx == mobDbParamIndex.Drop5id
+            || paramIdx == mobDbParamIndex.Drop6id
+            || paramIdx == mobDbParamIndex.Drop7id
+            || paramIdx == mobDbParamIndex.Drop8id
+            || paramIdx == mobDbParamIndex.Drop9id
+            || paramIdx == mobDbParamIndex.DropCardid
+            || paramIdx == mobDbParamIndex.MVP1id
+            || paramIdx == mobDbParamIndex.MVP2id
+            || paramIdx == mobDbParamIndex.MVP3id) {
+            paramVal = explainItemIdParam(paramVal, !this.alreadyExplainingLine, html);
         }
-        else if (paramName.match("Drop[1-9]per") || paramName.match("MVP[1-9]per") || paramName == "DropCardper") {
+        else if (paramIdx == mobDbParamIndex.Drop1per
+            || paramIdx == mobDbParamIndex.Drop2per
+            || paramIdx == mobDbParamIndex.Drop3per
+            || paramIdx == mobDbParamIndex.Drop4per
+            || paramIdx == mobDbParamIndex.Drop5per
+            || paramIdx == mobDbParamIndex.Drop6per
+            || paramIdx == mobDbParamIndex.Drop7per
+            || paramIdx == mobDbParamIndex.Drop8per
+            || paramIdx == mobDbParamIndex.Drop9per
+            || paramIdx == mobDbParamIndex.DropCardper
+            || paramIdx == mobDbParamIndex.MVP1per
+            || paramIdx == mobDbParamIndex.MVP2per
+            || paramIdx == mobDbParamIndex.MVP3per) {
             let iVal = parseInt(paramVal);
             let iValDiv = iVal / 100;
             paramVal = iValDiv + "%";
         }
-        return super.explainParamByLineSub(line, paramIdx, paramVal);
+        return super.explainParamByLineSub(line, paramIdx, paramVal, html);
     }
-    getParamDocumentation(paramName) {
-        if (paramName == "Mode")
+    getParamDocumentation(paramIdx) {
+        //let paramName = this.paramNames[paramIdx];
+        if (paramIdx == mobDbParamIndex.Mode)
             return this.enumToParamDocumentation(MD, 1);
-        else if (paramName == "Element")
+        else if (paramIdx == mobDbParamIndex.Element)
             return "ElementLv: value / 20  \nElementType: value % 10  \nTypes:  \n" + this.enumToParamDocumentation(ELE, 0);
-        else if (paramName == "Race")
-            return this.enumToParamDocumentation(RC, 0);
-        else if (paramName == "Scale")
+        else if (paramIdx == mobDbParamIndex.Race)
+            return this.enumToParamDocumentation(is_rAthena ? RC_rA : RC, 0);
+        else if (paramIdx == mobDbParamIndex.Scale)
             return this.enumToParamDocumentation(UNIT_SIZE, 0);
         return undefined;
     }
     getSymbolLabelForLine(l) {
-        let id = l.getParamByIndex(AthenaMobDB.mobIdParamIndex);
-        let spriteName = l.getParamByIndex(AthenaMobDB.spriteNameParamIndex);
-        let kROName = l.getParamByIndex(AthenaMobDB.kRONameParamIndex);
-        let rusName = l.getParamByIndex(AthenaMobDB.rusNameParamIndex);
-        if (!id || !spriteName || !kROName || !rusName)
+        let id = l.getParamByIndex(mobDbParamIndex.ID);
+        let spriteName = l.getParamByIndex(mobDbParamIndex.Sprite_Name);
+        let kROName = l.getParamByIndex(mobDbParamIndex.kROName);
+        if (!id || !spriteName || !kROName)
             return undefined;
-        return id + ":" + spriteName + ":" + kROName + ":" + rusName;
+        let rusName = mobDbParamIndex.RusName ? l.getParamByIndex(mobDbParamIndex.RusName) : undefined;
+        let ret = id + ":" + spriteName + ":" + kROName;
+        if (rusName)
+            ret += ":" + rusName;
+        return ret;
     }
-    explainLine(line) {
+    explainLine(line, html, cursorPosition) {
         let addExplanation = "";
         let mobIdStr = line.getParamByIndex(this.keyIndex);
         if (mobIdStr) {
@@ -1120,25 +1620,27 @@ class AthenaMobDB extends AthenaDB {
                 let mobSkills = mobSkillDB.mobidToSkillList.get(mobId);
                 if (mobSkills && mobSkills.length > 0) {
                     mobSkills.forEach(l => {
-                        let skillId = l.getParamByIndex(AthenaMobSkillDB.skillIdParamIdx);
-                        if (skillId)
-                            addExplanation += "  \n" + makeMarkdownLink("Skill", l.filePath, l.lineNum) + " : " + explainSkillIdOrTechNameParam(skillId) + "  \n";
+                        let skillId = l.getParamByIndex(mobSkillDBParamIndex.skillId);
+                        if (skillId) {
+                            let skillIdExplanation = explainSkillIdOrTechNameParam(skillId, html);
+                            let mobSkillDbLineShort = mobSkillDB.explainLineShort(l);
+                            if (html)
+                                addExplanation += "<br>" + "Skill: " + skillIdExplanation + "<br>" + mobSkillDbLineShort + "<br>";
+                            else
+                                addExplanation += "  \n" + makeMarkdownLink("Skill", l.filePath, l.lineNum) + " : " + skillIdExplanation + "  \n" + mobSkillDbLineShort + "  \n";
+                        }
                     });
                 }
             }
         }
-        return super.explainLine(line) + addExplanation;
+        return super.explainLine(line, html, cursorPosition) + addExplanation;
     }
 }
-AthenaMobDB.mobIdParamIndex = 0;
-AthenaMobDB.spriteNameParamIndex = 1;
-AthenaMobDB.kRONameParamIndex = 2;
-AthenaMobDB.rusNameParamIndex = 4;
 class AthenaMobSkillDB extends AthenaDB {
     constructor(fileNames) {
         super(fileNames, undefined, 999, 999);
     }
-    explainParamByLine(line, paramIdx) {
+    explainParamByLine(line, paramIdx, html) {
         //MOB_ID,dummy value (info only),STATE,SKILL_ID,SKILL_LV,rate (10000 = 100%),casttime,delay,cancelable,target,condition type,condition value,val1,val2,val3,val4,val5,emotion,chat{,increaseRange,castbegin_script,castend_script}
         let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
         let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
@@ -1147,11 +1649,11 @@ class AthenaMobSkillDB extends AthenaDB {
             if (iVal > 0) {
                 let mobDbLine = mobDB.idToDbLine.get(iVal);
                 if (mobDbLine)
-                    paramVal += " (" + mobDbLine.getParamByIndex(AthenaMobDB.spriteNameParamIndex) + ")"; // "*Mob DB*  \n" + mobDB.explainLine(mobDbLine);
+                    paramVal += "   \n___  \n" + mobDB.explainLine(mobDbLine, html);
             }
         }
         else if (paramName == "SKILL_ID") {
-            paramVal = explainSkillIdOrTechNameParam(paramVal);
+            paramVal = explainSkillIdOrTechNameParam(paramVal, html);
         }
         else if (paramName == "rate (10000 = 100%)") {
             paramVal = parseInt(paramVal) / 100 + " %";
@@ -1160,7 +1662,7 @@ class AthenaMobSkillDB extends AthenaDB {
             paramVal = millisecondsToHumanReadableString(parseInt(paramVal));
         else if (paramName == "dummy value (info only)") {
             if (!this.alreadyExplainingLine) {
-                paramVal = this.explainLine(line);
+                paramVal = this.explainLine(line, html);
             }
         }
         else if (paramName == "target")
@@ -1169,7 +1671,17 @@ class AthenaMobSkillDB extends AthenaDB {
             paramVal = this.getExplanationByArray(paramVal, AthenaMobSkillDB.possibleStates);
         else if (paramName == "condition type")
             paramVal = this.getExplanationByArray(paramVal, AthenaMobSkillDB.possibleConditions);
-        return this.explainParamByLineSub(line, paramIdx, paramVal);
+        else if (paramName == "condition value") {
+            let condTypeParamIdx = this.getParamIndex("condition type");
+            if (condTypeParamIdx !== undefined) {
+                let condTypeVal = line.getParamByIndex(condTypeParamIdx);
+                if (condTypeVal == "skillused" || condTypeVal == "afterskill")
+                    paramVal = explainSkillIdOrTechNameParam(paramVal, html);
+            }
+        }
+        else if (paramName == "emotion")
+            paramVal = explainEnumParam(paramVal, emotion_type);
+        return this.explainParamByLineSub(line, paramIdx, paramVal, html);
     }
     getExplanationByArray(paramVal, array) {
         for (let i = 0; i < array.length; i++) {
@@ -1190,7 +1702,8 @@ class AthenaMobSkillDB extends AthenaDB {
         });
         return ret;
     }
-    getParamDocumentation(paramName) {
+    getParamDocumentation(paramIdx) {
+        let paramName = this.paramNames[paramIdx];
         if (paramName == "target") {
             return this.getDocumentationByArray(AthenaMobSkillDB.possibleTargets);
         }
@@ -1219,9 +1732,38 @@ class AthenaMobSkillDB extends AthenaDB {
             });
         });
     }
+    explainLineShort(dbLine) {
+        let p = mobSkillDBParamIndex;
+        //MOB_ID,dummy value (info only),STATE,SKILL_ID,SKILL_LV,rate (10000 = 100%),casttime,delay,cancelable,target,condition type,condition value,val1,val2,val3,val4,val5,emotion,chat{,increaseRange,castbegin_script,castend_script}
+        //let skillId = dbLine.getIntParamByIndex(p.skillId);
+        let skillLv = dbLine.getIntParamByIndex(p.skillLv);
+        let state = dbLine.getParamByIndex(p.state);
+        let rate = dbLine.getIntParamByIndex(p.rate) || 0;
+        let casttime = dbLine.getIntParamByIndex(p.casttime) || 0;
+        let delay = dbLine.getIntParamByIndex(p.delay) || 0;
+        let target = dbLine.getParamByIndex(p.target);
+        let condtype = dbLine.getParamByIndex(p.conditionType);
+        let condVal = dbLine.getIntParamByIndex(p.conditionValue) || 0;
+        let val1 = dbLine.getIntParamByIndex(p.val1);
+        let val2 = dbLine.getIntParamByIndex(p.val2);
+        let val3 = dbLine.getIntParamByIndex(p.val3);
+        let val4 = dbLine.getIntParamByIndex(p.val4);
+        let val5 = dbLine.getIntParamByIndex(p.val5);
+        return "Lv" + skillLv + " "
+            + (rate ? rate / 100.0 : 0) + "% "
+            + state + " "
+            + (casttime ? "ct:" + millisecondsToHumanReadableString(casttime) + " " : "")
+            + (delay ? "cd:" + millisecondsToHumanReadableString(delay) + " " : "")
+            + target + " "
+            + condtype + " "
+            + condVal + " "
+            + (val1 || "") + " "
+            + (val2 || "") + " "
+            + (val3 || "") + " "
+            + (val4 || "") + " "
+            + (val5 || "");
+    }
 }
-AthenaMobSkillDB.dummyNameParamIdx = 1;
-AthenaMobSkillDB.skillIdParamIdx = 3;
 AthenaMobSkillDB.possibleTargets = [
     ["target"],
     ["self"],
@@ -1272,6 +1814,34 @@ AthenaMobSkillDB.possibleConditions = [
     ["casttargeted", "when a target is in cast range."],
     ["rudeattacked", "when a target is rude attacked"],
 ];
+class MobSkillDBParamIndex {
+    constructor() {
+        this.n = 0;
+        this.mobId = this.n++;
+        this.dummyName = this.n++;
+        this.state = this.n++;
+        this.skillId = this.n++;
+        this.skillLv = this.n++;
+        this.rate = this.n++;
+        this.casttime = this.n++;
+        this.delay = this.n++;
+        this.cancelable = this.n++;
+        this.target = this.n++;
+        this.conditionType = this.n++;
+        this.conditionValue = this.n++;
+        this.val1 = this.n++;
+        this.val2 = this.n++;
+        this.val3 = this.n++;
+        this.val4 = this.n++;
+        this.val5 = this.n++;
+        this.emotion = this.n++;
+        this.chat = is_rAthena ? undefined : this.n++;
+        this.increaseRange = is_rAthena ? undefined : this.n++;
+        this.castBeginScript = is_rAthena ? undefined : this.n++;
+        this.castEndScript = is_rAthena ? undefined : this.n++;
+    }
+}
+let mobSkillDBParamIndex;
 var INF;
 (function (INF) {
     INF[INF["ATTACK_SKILL"] = 1] = "ATTACK_SKILL";
@@ -1317,15 +1887,43 @@ var INF2;
     INF2[INF2["SHOW_SCALE"] = 262144] = "SHOW_SCALE";
 })(INF2 || (INF2 = {}));
 ;
+class SkillDBParamIndex {
+    constructor() {
+        this.n = 0;
+        this.id = this.n++;
+        this.range = this.n++;
+        this.hit = this.n++;
+        this.inf = this.n++;
+        this.element = this.n++;
+        this.nk = this.n++;
+        this.splash = this.n++;
+        this.max = this.n++;
+        this.numberOfHits = this.n++;
+        this.castCancel = this.n++;
+        this.castDefenseRate = this.n++;
+        this.inf2 = this.n++;
+        this.maxCount = this.n++;
+        this.skillType = this.n++;
+        this.blowCount = this.n++;
+        this.inf3 = is_rAthena ? this.n++ : undefined;
+        this.techName = this.n++;
+        this.visibleName = this.n++;
+        this.rusName = !is_rAthena ? this.n++ : undefined;
+    }
+    defaultVisibleName() {
+        return (!is_rAthena && this.rusName !== undefined) ? this.rusName : this.visibleName;
+    }
+}
+let skillDbParamIndex;
 class AthenaSkillDB extends AthenaDB {
     constructor(fileName) {
-        super(fileName ? [fileName] : [athenaDbDir + "/skill_db.txt"]);
+        super(fileName ? [fileName] : [athenaDbDir + "/skill_db.txt"], undefined, 0, skillDbParamIndex.techName);
     }
-    explainParamByLine(line, paramIdx) {
+    explainParamByLine(line, paramIdx, html) {
         let paramName = paramIdx < this.paramNames.length ? this.paramNames[paramIdx] : "?";
         let paramVal = paramIdx < line.params.length ? line.params[paramIdx].trim() : "";
         if (paramName == "name" || paramName == "id") {
-            paramVal = explainSkillIdOrTechNameParam(paramVal);
+            paramVal = explainSkillIdOrTechNameParam(paramVal, html);
         }
         else if (paramName == "range") {
             let iVal = parseInt(paramVal);
@@ -1370,9 +1968,10 @@ class AthenaSkillDB extends AthenaDB {
         }
         else if (paramName == "inf2")
             paramVal = explainBinMaskEnumParam(paramVal, INF2);
-        return this.explainParamByLineSub(line, paramIdx, paramVal);
+        return this.explainParamByLineSub(line, paramIdx, paramVal, html);
     }
-    getParamDocumentation(paramName) {
+    getParamDocumentation(paramIdx) {
+        let paramName = this.paramNames[paramIdx];
         if (paramName == "inf")
             return this.enumToParamDocumentation(INF, 1);
         else if (paramName == "nk")
@@ -1382,16 +1981,32 @@ class AthenaSkillDB extends AthenaDB {
         else if (paramName == "element")
             return this.enumToParamDocumentation(ELE, 0);
     }
-    explainLine(line) {
-        let result = super.explainLine(line);
+    explainLine(line, html, cursorPosition) {
+        let result = super.explainLine(line, html, cursorPosition);
         let skillId = parseInt(line.params[this.keyIndex]);
         if (skillId < 1)
             return result;
         let skillCastDbLine = skillCastDB.idToDbLine.get(skillId);
         if (!skillCastDbLine)
             return result;
-        result = "*Skill DB*  \n" + result + "  \n*Skill Cast DB*  \n" + skillCastDB.explainLine(skillCastDbLine);
+        let skillCastDbExplanation = skillCastDB.explainLine(skillCastDbLine, html);
+        if (html)
+            result = "Skill DB<br>" + result + "<br>Skill Cast DB<br>" + skillCastDbExplanation;
+        else
+            result = result + "   \n___  \n" + skillCastDbExplanation;
         return result;
+    }
+    getSymbolLabelForLine(l) {
+        let skillId = l.getParamByIndex(skillDbParamIndex.id);
+        let techName = l.getParamByIndex(skillDbParamIndex.techName);
+        let visibleName = l.getParamByIndex(skillDbParamIndex.visibleName);
+        if (skillDbParamIndex)
+            if (!skillId || !techName || !visibleName)
+                return undefined;
+        let ret = skillId + ":" + techName + ":" + visibleName;
+        if (skillDbParamIndex.rusName !== undefined)
+            ret += ":" + l.getParamByIndex(skillDbParamIndex.rusName);
+        return ret;
     }
 }
 class AthenaSkillCastDB extends AthenaDB {
@@ -1484,12 +2099,21 @@ function millisecondsToHumanReadableString(milliseconds) {
     let secondsAndMillis = milliseconds % (60 * 1000);
     if (days)
         timeStr += " " + days + "d";
-    if (hours)
-        timeStr += " " + hours + "h";
-    if (minutes)
-        timeStr += " " + minutes + "m";
-    if (secondsAndMillis)
-        timeStr += " " + (secondsAndMillis / 1000) + "s";
+    if (hours) {
+        // if ( timeStr.length > 0 )
+        // 	timeStr += " "
+        timeStr += hours + "h";
+    }
+    if (minutes) {
+        // if ( timeStr.length > 0 )
+        // 	timeStr += " "
+        timeStr += minutes + "m";
+    }
+    if (secondsAndMillis) {
+        // if ( timeStr.length > 0 )
+        // 	timeStr += " "
+        timeStr += (secondsAndMillis / 1000) + "s";
+    }
     return timeStr;
 }
 class AthenaQuestDBLine extends AthenaDBLine {
@@ -1566,10 +2190,13 @@ function loadquestid2display(filePath) {
     }
     let fileContentBytes = fs.readFileSync(filePath);
     // Replace comments with spaces
+    let slash = '/'.charCodeAt(0);
+    let nextLine = '\n'.charCodeAt(0);
+    let space = ' '.charCodeAt(0);
     for (let i = 0; i < fileContentBytes.length - 1; i++)
-        if (fileContentBytes[i] == '/' && fileContentBytes[i + 1] == '/')
-            while (fileContentBytes[i] != '\n' && i < fileContentBytes.length)
-                fileContentBytes[i] = ' ';
+        if (fileContentBytes[i] == slash && fileContentBytes[i + 1] == slash)
+            while (fileContentBytes[i] != nextLine && i < fileContentBytes.length)
+                fileContentBytes[i++] = space;
     let fileContent = iconv.decode(fileContentBytes, codepage);
     let tokens = fileContent.split("#");
     let ret = new Map();
@@ -1616,16 +2243,16 @@ var e_athena_exportsyntax;
 ;
 // tslint:disable: curly
 function readCompletionsArrayFromFile(filePath) {
-    var fileContent = fs.readFileSync(filePath);
-    var lines = fileContent.toString().split(/\r?\n/);
-    var myCompletions = new Array();
-    var i;
+    let fileContent = fs.readFileSync(filePath);
+    let lines = fileContent.toString().split(/\r?\n/);
+    let myCompletions = new Array();
+    let i;
     for (i = 0; i < lines.length; i++) {
-        var tokens = lines[i].split("\t");
+        let tokens = lines[i].split("\t");
         if (tokens.length < 2)
             continue; // Invalid file format, should be at least type and label
         const item = new vscode.CompletionItem(tokens[1]);
-        var type = parseInt(tokens[0]);
+        let type = parseInt(tokens[0]);
         if (type == e_athena_exportsyntax.MOB) {
             continue;
         }
@@ -1746,7 +2373,7 @@ class AthenaFunctionInfo {
         for (let i = 0; i < params.length; i++) {
             let delim = params[i].indexOf(' ');
             if (delim != -1)
-                this.params[i] = new AthenaFuncParam(trimString(params[i].substring(0, delim)), trimString(params[i].substring(delim, params[i].length)));
+                this.params[i] = new AthenaFuncParam(params[i].substring(0, delim).trim(), params[i].substring(delim, params[i].length).trim());
             else
                 this.params[i] = new AthenaFuncParam("", params[i]);
         }
@@ -1843,6 +2470,18 @@ function copySearchRegex() {
     vscode.env.clipboard.writeText(text);
 }
 function isDocumentAthenaDB(document) {
+    // Check auto-loaded DBs
+    let autoLoadedDatabases = getAutoLoadedDatabases();
+    let foundInAutoLoaded = autoLoadedDatabases.find(db => {
+        let dbFile = db.findFileByFilePath(document.fileName);
+        return dbFile != null;
+    });
+    if (foundInAutoLoaded)
+        return true;
+    // Check cached mapping
+    if (documentToAthenaDBFile.has(document))
+        return true;
+    // Check file format 
     if (document.fileName.endsWith("_db.txt")
         || document.fileName.endsWith("_db2.txt")
         || formatFileName(document.fileName).includes(formatFileName(athenaDbDir))) {
@@ -1868,11 +2507,11 @@ function activate(context) {
     const tstart = new Date().getTime();
     const editorConf = vscode.workspace.getConfiguration("editor", null);
     wordSeparators = editorConf.get("wordSeparators") || "";
-    let conf = vscode.workspace.getConfiguration("eathena");
+    let conf = vscode.workspace.getConfiguration(languageIdLowerCase);
     function getConfValOrThrow(settingName, description) {
         let ret = conf.get(settingName);
         if (!ret) {
-            let err = "[" + description + "] setting is not set.";
+            let err = "[" + (description || settingName) + "] setting is not set.";
             vscode.window.showErrorMessage(err);
             throw new Error(err);
         }
@@ -1904,26 +2543,40 @@ function activate(context) {
     }
     // Update plugin variables from config when config setting is changed or on init
     function updateSettingsFromConfiguration() {
-        let conf = vscode.workspace.getConfiguration("eathena");
+        let conf = vscode.workspace.getConfiguration(languageIdLowerCase);
         mobImageURL = conf.get("mobImageURL");
         itemImageURL = conf.get("itemImageURL");
         skillImageURL = conf.get("skillImageURL");
         defaultAthenaDbColumnHighlighting = conf.get("defaultAthenaDbColumnHighlighting");
         defaultAthenaDbColumnHints = conf.get("defaultAthenaDbColumnHints");
-        athenaNpcDir = formatDirNameFromConfig(getConfValOrThrow("athenaNpcDirectory", "eAthena NPC directory"));
-        athenaDbDir = formatDirNameFromConfig(getConfValOrThrow("athenaDbDirectory", "eAthena DB directory"));
+        is_rAthena = conf.get("isRAthena", false);
+        itemDbParamIndex = new ItemDBParamIndex();
+        mobDbParamIndex = new MobDBParamIndex();
+        skillDbParamIndex = new SkillDBParamIndex();
+        mobSkillDBParamIndex = new MobSkillDBParamIndex();
+        athenaDir = formatDirNameFromConfig(getConfValOrThrow("athenaDirectory", "Athena directory"));
+        athenaNpcDir = athenaDir + "/npc";
+        if (is_rAthena) {
+            athenaDbDir = athenaDir + "/db/re";
+            itemDbFilePaths = [athenaDbDir + "/item_db.txt"];
+            mobDbFilePaths = [athenaDbDir + "/mob_db.txt"];
+            mobSkillDbFilePaths = [athenaDbDir + "/mob_skill_db.txt"];
+        }
+        else {
+            athenaDbDir = athenaDir + "/db";
+            itemDbFilePaths = [athenaDbDir + "/item_db.txt", athenaDbDir + "/item_db2.txt"];
+            mobDbFilePaths = [athenaDbDir + "/mob_db.txt", athenaDbDir + "/mob_db2.txt"];
+            mobSkillDbFilePaths = [athenaDbDir + "/mob_skill_db.txt", athenaDbDir + "/mob_skill_db2.txt"];
+        }
+        constDBFilePath = athenaDir + "/db/const.txt";
         itemBonusTxtPath = getConfValOrThrow("itemBonusTxtPath", "item_bonus.txt path");
         questid2displaypath = getConfValOrThrow("clientQuestid2displayPath", "Client questid2display.txt path");
         codepage = getConfValOrThrow("encoding", "Encoding");
-        itemDbFilePaths = getDbFilePathsFromConfiguration("itemDbRelativePath", "ItemDB Relative Path(s)");
-        mobDbFilePaths = getDbFilePathsFromConfiguration("mobDbRelativePath", "MobDB Relative Path(s)");
-        mobSkillDbFilePaths = getDbFilePathsFromConfiguration("mobSkillDbRelativePath", "MobSkillDB Relative Path(s)");
-        constDBFilePath = athenaDbDir + "/" + getConfValOrThrow("constDbRelativePath", "Const DB relative path");
     }
     updateSettingsFromConfiguration();
     vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration("eathena")) {
-            conf = vscode.workspace.getConfiguration("eathena");
+        if (event.affectsConfiguration(languageIdLowerCase)) {
+            conf = vscode.workspace.getConfiguration(languageIdLowerCase);
             updateSettingsFromConfiguration();
         }
     });
@@ -1939,23 +2592,31 @@ function activate(context) {
     let item_db_time = new Date().getTime() - t;
     skillDB = new AthenaSkillDB();
     skillCastDB = new AthenaSkillCastDB();
-    loadConstDB(constDBFilePath, is_rAthena ? getConfValOrThrow("scriptConstantsHppPath", "script_constants.hpp path") : undefined);
+    itemTradeDB = new AthenaItemTradeDB();
+    loadConstDB(constDBFilePath, is_rAthena ? athenaDir + "/src/map/script_constants.hpp" : undefined);
     const itemBonusDB = is_rAthena ? new ItemBonusDB_rAthena(itemBonusTxtPath) : new ItemBonusDB([itemBonusTxtPath]);
-    let completionsTxtFn = context.extensionPath + "/res/completions.txt";
-    if (!fs.existsSync(completionsTxtFn))
-        syncWithAthena();
+    let completionsTxtDir = context.extensionPath + "/res";
+    let completionsTxtFn = completionsTxtDir + "/completions.txt";
+    if (!fs.existsSync(completionsTxtFn)) {
+        if (is_rAthena)
+            syncWithAthena();
+        else {
+            vscode.window.showErrorMessage("File missing: " + completionsTxtFn);
+            return;
+        }
+    }
     let allCompletions = readCompletionsArrayFromFile(completionsTxtFn);
     mobDB.idToDbLine.forEach(element => {
-        const mobName = element.params[AthenaMobDB.spriteNameParamIndex];
-        const mobId = element.params[AthenaMobDB.mobIdParamIndex];
+        const mobName = element.params[mobDbParamIndex.Sprite_Name];
+        const mobId = element.params[mobDbParamIndex.ID];
         const completionItem = new AthenaDbCompletionItem(mobName, vscode.CompletionItemKind.Unit, mobDB, element);
         completionItem.filterText = mobName + " " + mobId;
         completionItem.detail = mobId;
         allCompletions.push(completionItem);
     });
     itemDB.idToDbLine.forEach(element => {
-        const itemName = element.params[AthenaItemDB.aegisNameParamIndex];
-        const itemId = element.params[AthenaItemDB.itemIdParamIndex];
+        const itemName = element.params[itemDbParamIndex.AegisName];
+        const itemId = element.params[itemDbParamIndex.ID];
         const completionItem = new AthenaDbCompletionItem(itemName, vscode.CompletionItemKind.Property, itemDB, element);
         completionItem.filterText = itemName + " " + itemId;
         //completionItem.documentation = new vscode.MarkdownString(itemDB.explainLine(element));
@@ -1985,14 +2646,14 @@ function activate(context) {
             if (!itemDbLine && wordInt > 0)
                 itemDbLine = itemDB.idToDbLine.get(wordInt);
             if (itemDbLine) {
-                let itemID = itemDbLine.params[AthenaItemDB.itemIdParamIndex];
+                let itemID = itemDbLine.params[itemDbParamIndex.ID];
                 result = result.concat(findWordReferencesInAllFiles([itemID, word]));
             }
             let mobDbLine = mobDB.nameToDbLine.get(word);
             if (!mobDbLine && wordInt > 0)
                 mobDbLine = mobDB.idToDbLine.get(wordInt);
             if (mobDbLine) {
-                let mobId = mobDbLine.params[AthenaMobDB.mobIdParamIndex];
+                let mobId = mobDbLine.params[mobDbParamIndex.ID];
                 result = result.concat(findWordReferencesInAllFiles([mobId, word]));
             }
             return result;
@@ -2119,7 +2780,7 @@ function activate(context) {
             let word = document.getText(wordRange);
             let functionInfo = scriptFunctionDB.get(word);
             if (functionInfo != null)
-                return new GetFunctionAndParameterInfoResult(functionInfo, activeParameter);
+                return new GetFunctionAndParameterInfoResult(functionInfo, activeParameter < functionInfo.params.length ? activeParameter : functionInfo.params.length - 1);
             if (activeParameter == -1)
                 activeParameter = 0;
             lineOfs--;
@@ -2128,6 +2789,7 @@ function activate(context) {
     }
     let signatureHelpProvider = vscode.languages.registerSignatureHelpProvider(languageId, {
         provideSignatureHelp(document, position, token, context) {
+            let hover = provideHover(document, position, token);
             let fp = getFunctionAndParameterInfo(document, position);
             if (fp) {
                 let functionInfo = fp.func;
@@ -2138,7 +2800,7 @@ function activate(context) {
                 let info = new vscode.SignatureInformation(signatureLabel);
                 functionInfo.params.forEach(p => {
                     let paramLabel = p.getLabel();
-                    info.parameters.push(new vscode.ParameterInformation(paramLabel));
+                    info.parameters.push(new vscode.ParameterInformation(paramLabel, new vscode.MarkdownString(hover)));
                 });
                 infos.push(info);
                 ret.signatures = infos;
@@ -2150,28 +2812,29 @@ function activate(context) {
             // ���� �� ��� ��� ������ �� �������, ������ ��������� ������� �� �������. ��������� �� ������������� ����������� ���������
             if (isDocumentAthenaDB(document)) {
                 let dbFile = ensureDocumentAthenaDbFile(document);
-                let parsedLine = dbFile.lines[position.line];
-                let activeParam = -1;
-                for (let i = 0; i < parsedLine.paramRanges.length; i++) {
-                    if (parsedLine.paramRanges[i].contains(position)) {
-                        activeParam = i;
-                        break;
-                    }
-                }
+                let dbLine = dbFile.lines[position.line];
+                let activeParam = dbLine.getParamIdxAtPosition(position);
                 let ret = new vscode.SignatureHelp();
                 let infos = new Array();
                 let signatureLabel = "";
                 dbFile.parentDb.paramNames.forEach(p => {
-                    signatureLabel += "[" + p + "] ";
+                    signatureLabel += "[" + p + "]\n";
                 });
                 let info = new vscode.SignatureInformation(signatureLabel);
+                for (let i = 0; i < dbFile.parentDb.paramNames.length; i++) {
+                    let p = dbFile.parentDb.paramNames[i];
+                    let documentation = dbFile.parentDb.getParamDocumentation(i);
+                    let str = hover || "";
+                    if (documentation)
+                        str += "  \n" + documentation;
+                    info.parameters.push(new vscode.ParameterInformation("[" + p + "]", new vscode.MarkdownString(str)));
+                }
                 dbFile.parentDb.paramNames.forEach(p => {
-                    info.parameters.push(new vscode.ParameterInformation("[" + p + "]", dbFile.parentDb.getParamDocumentation(p)));
                 });
                 infos.push(info);
                 ret.signatures = infos;
                 ret.activeSignature = 0;
-                if (activeParam != -1)
+                if (activeParam != undefined)
                     ret.activeParameter = activeParam;
                 return ret;
             }
@@ -2190,94 +2853,134 @@ function activate(context) {
             || document.lineAt(position).text.toLowerCase().indexOf("quest") != -1
             || paramNameLowerCase.includes("quest_id") || paramNameLowerCase.includes("questid"));
     }
+    function provideHover(document, position, token) {
+        let colHint = "";
+        if (isDocumentAthenaDB(document) && position.line != 0) {
+            let dbFile = ensureDocumentAthenaDbFile(document);
+            let db = dbFile.parentDb;
+            let parsedLine = dbFile.lines[position.line];
+            let i = 0;
+            for (i = 0; i < parsedLine.paramRanges.length; i++)
+                if (parsedLine.paramRanges[i].contains(position)) {
+                    colHint = "Column " + i;
+                    if (i < db.paramNames.length)
+                        colHint += "  \n" + db.explainParamByLine(parsedLine, i, false);
+                    //colHint += "  \n  \n";
+                    break;
+                }
+        }
+        let wordRange = document.getWordRangeAtPosition(position, wordPattern);
+        let word = document.getText(wordRange);
+        let wordInt = parseInt(word);
+        let functionInfo = scriptFunctionDB.get(word);
+        if (functionInfo != null) {
+            if (colHint.length)
+                colHint += "  \n___  \n";
+            return colHint + functionInfo.getLabel();
+        }
+        let DBs = [itemDB, mobDB, skillDB];
+        let isNameExplained = false;
+        for (let i = 0; i < DBs.length; i++) { // no foreach because we use return which cant be used inside foreach
+            let dbLine = DBs[i].nameToDbLine.get(word);
+            if (dbLine) {
+                if (colHint.length)
+                    colHint += "  \n___  \n";
+                colHint += DBs[i].explainLine(dbLine, false);
+                isNameExplained = true;
+            }
+        }
+        let itemBonusExplanation = itemBonusDB.explainBonus(word);
+        if (itemBonusExplanation) {
+            if (colHint.length)
+                colHint += "  \n___  \n";
+            return colHint + itemBonusExplanation;
+        }
+        let constDbEntry = constDB.get(word.toLowerCase());
+        if (constDbEntry) {
+            let val = "*script constant* " + constDbEntry.name;
+            if (constDbEntry.val != undefined)
+                val += " = " + constDbEntry.val;
+            if (colHint.length)
+                colHint += "  \n___  \n";
+            colHint += val;
+        }
+        let funcInfo = getFunctionAndParameterInfo(document, position);
+        const paramNameLowerCase = (funcInfo && funcInfo.activeParameter >= 0) ? funcInfo.func.params[funcInfo.activeParameter].name.toLowerCase() : "";
+        if (isWordQuestID(document, position)) {
+            let strServer = "";
+            let strClient = "";
+            if (questDB) {
+                const serverQuest = questDB.idToDbLine.get(wordInt);
+                if (serverQuest)
+                    strServer = serverQuest.getStringForTooltip();
+            }
+            if (questid2display) {
+                const clientQuest = questid2display.get(wordInt);
+                if (clientQuest)
+                    strClient = makeMarkdownLink(clientQuest.name, questid2displaypath, clientQuest.lineNum) + "  \n" + clientQuest.longdesc + "  \n*" + clientQuest.shortdesc + "*  \n";
+            }
+            let str = "";
+            if (strServer && strClient)
+                str = "**server**  \n___  \n" + strServer + "**client**  \n" + strClient;
+            else if (strServer)
+                str = strServer;
+            else if (strClient)
+                str = strClient;
+            if (str.length)
+                return colHint + str;
+        }
+        if (wordInt && funcInfo && funcInfo.activeParameter != -1) {
+            if (paramNameLowerCase == "mob_id" || paramNameLowerCase == "mobid" || paramNameLowerCase == "mob" || paramNameLowerCase == "monster" || paramNameLowerCase == "class_" || paramNameLowerCase == "class") {
+                let mobDbLine = mobDB.idToDbLine.get(wordInt);
+                if (mobDbLine) {
+                    if (colHint.length)
+                        colHint += "  \n___  \n";
+                    return colHint + mobDB.explainLine(mobDbLine, false, position);
+                }
+            }
+            else if (paramNameLowerCase == "itemid" || paramNameLowerCase == "itid" || paramNameLowerCase == "item") {
+                let itemDbLine = itemDB.idToDbLine.get(wordInt);
+                if (itemDbLine) {
+                    if (colHint.length)
+                        colHint += "  \n___  \n";
+                    return colHint + itemDB.explainLine(itemDbLine, false, position);
+                }
+            }
+        }
+        // Test for NPC view
+        let lineText = document.lineAt(position).text;
+        let match = lineText.match(/[A-Za-z0-9@,_ ]*\t(?:script|warp|shop|cashshop|duplicate\([^)]*\))\t[^\t]*\t([^,]*)/);
+        if (match && match.length == 2 && word == match[1]) {
+            let npcView;
+            if (constDbEntry && constDbEntry.val)
+                npcView = constDbEntry.val;
+            else if (isFullyNumericString(word))
+                npcView = wordInt;
+            if (npcView) {
+                if (colHint.length)
+                    colHint += "  \n___  \n";
+                let url = mobImageURL ? mobImageURL.replace("MOBID", npcView.toString()) : "";
+                colHint += "![image](" + url + ")";
+            }
+        }
+        if (colHint)
+            return colHint;
+        return undefined;
+    }
     let hoverProvider = vscode.languages.registerHoverProvider(languageId, {
         provideHover(document, position, token) {
-            let colHint = "";
-            if (isDocumentAthenaDB(document) && position.line != 0) {
-                let dbFile = ensureDocumentAthenaDbFile(document);
-                let db = dbFile.parentDb;
-                let parsedLine = dbFile.lines[position.line];
-                let i = 0;
-                for (i = 0; i < parsedLine.paramRanges.length; i++)
-                    if (parsedLine.paramRanges[i].contains(position)) {
-                        colHint = "Column " + i;
-                        if (i < db.paramNames.length)
-                            colHint += "  \n" + db.explainParamByLine(parsedLine, i);
-                        colHint += "  \n  \n";
-                        break;
-                    }
-            }
-            let wordRange = document.getWordRangeAtPosition(position, wordPattern);
-            let word = document.getText(wordRange);
-            let wordInt = parseInt(word);
-            let functionInfo = scriptFunctionDB.get(word);
-            if (functionInfo != null) {
-                return new vscode.Hover(colHint + functionInfo.getLabel(), wordRange);
-            }
-            let DBs = [itemDB, mobDB, skillDB];
-            for (let i = 0; i < DBs.length; i++) { // no foreach because we use return which cant be used inside foreach
-                let dbLine = DBs[i].nameToDbLine.get(word);
-                if (dbLine) {
-                    colHint += "*" + dbLine.filePath + "*" + "  \n" + DBs[i].explainLine(dbLine);
-                }
-            }
-            let itemBonusExplanation = itemBonusDB.explainBonus(word);
-            if (itemBonusExplanation)
-                return new vscode.Hover(colHint + itemBonusExplanation, wordRange);
-            let constDbEntry = constDB.get(word.toLowerCase());
-            if (constDbEntry) {
-                let val = "*script constant* " + constDbEntry.name;
-                if (constDbEntry.val != undefined)
-                    val += " = " + constDbEntry.val;
-                return new vscode.Hover(colHint + val, wordRange);
-            }
-            let funcInfo = getFunctionAndParameterInfo(document, position);
-            const paramNameLowerCase = (funcInfo && funcInfo.activeParameter >= 0) ? funcInfo.func.params[funcInfo.activeParameter].name.toLowerCase() : "";
-            if (isWordQuestID(document, position)) {
-                let strServer = "";
-                let strClient = "";
-                if (questDB) {
-                    const serverQuest = questDB.idToDbLine.get(wordInt);
-                    if (serverQuest)
-                        strServer = serverQuest.getStringForTooltip();
-                }
-                if (questid2display) {
-                    const clientQuest = questid2display.get(wordInt);
-                    if (clientQuest)
-                        strClient = makeMarkdownLink(clientQuest.name, questid2displaypath, clientQuest.lineNum) + "  \n" + clientQuest.longdesc + "  \n*" + clientQuest.shortdesc + "*  \n";
-                }
-                let str = "";
-                if (strServer && strClient)
-                    str = "**server**  \n" + strServer + "**client**  \n" + strClient;
-                else if (strServer)
-                    str = strServer;
-                else if (strClient)
-                    str = strClient;
-                if (str.length)
-                    return new vscode.Hover(colHint + str, wordRange);
-            }
-            if (wordInt && funcInfo && funcInfo.activeParameter != -1) {
-                if (paramNameLowerCase == "mob_id" || paramNameLowerCase == "mobid" || paramNameLowerCase == "mob" || paramNameLowerCase == "monster" || paramNameLowerCase == "class_" || paramNameLowerCase == "class") {
-                    let mobDbLine = mobDB.idToDbLine.get(wordInt);
-                    if (mobDbLine)
-                        return new vscode.Hover(colHint + mobDB.explainLine(mobDbLine), wordRange);
-                }
-                else if (paramNameLowerCase == "itemid" || paramNameLowerCase == "itid" || paramNameLowerCase == "item") {
-                    let itemDbLine = itemDB.idToDbLine.get(wordInt);
-                    if (itemDbLine)
-                        return new vscode.Hover(colHint + itemDB.explainLine(itemDbLine), wordRange);
-                }
-            }
-            if (colHint)
-                return new vscode.Hover(colHint, wordRange);
-            return null;
+            let str = provideHover(document, position, token);
+            if (str)
+                return new vscode.Hover(str, document.getWordRangeAtPosition(position, wordPattern));
+            else
+                return null;
         }
     });
     let completionProvider = vscode.languages.registerCompletionItemProvider("*", {
         resolveCompletionItem(item, token) {
             if (item instanceof AthenaDbCompletionItem) {
                 if (!item.documentation)
-                    item.documentation = new vscode.MarkdownString(item.db.explainLine(item.dbLine));
+                    item.documentation = new vscode.MarkdownString(item.db.explainLine(item.dbLine, false));
             }
             let itemBonusExplanation = itemBonusDB.explainBonus(item.label);
             if (itemBonusExplanation)
@@ -2292,117 +2995,163 @@ function activate(context) {
     });
     let navProvider = vscode.languages.registerDocumentSymbolProvider(languageId, {
         provideDocumentSymbols(document, token) {
-            return new Promise((resolve, reject) => {
-                let symbols = new Array();
-                let text = document.getText();
-                let curlyCount = 0;
-                let isString = false;
-                let openCurlyOffset = -1; // Current symbol beginning
-                let label = "";
-                let bodyStart = 0, bodyEnd = 0;
-                if (isDocumentAthenaDB(document)) {
-                    let dbFile = ensureDocumentAthenaDbFile(document);
-                    let db = dbFile.parentDb;
-                    let n = 0;
-                    dbFile.lines.forEach(l => {
-                        let label = db.getSymbolLabelForLine(l);
-                        if (label) {
-                            let symbol = new vscode.SymbolInformation(label, vscode.SymbolKind.Variable, document.fileName, new vscode.Location(document.uri, new vscode.Range(l.paramRanges[0].start, l.paramRanges[l.paramRanges.length - 1].end)));
-                            symbols.push(symbol);
-                            n++;
-                        }
-                    });
-                    //console.log("total symbols: " + n);
-                    resolve(symbols);
-                    return;
+            if (isDocumentAthenaDB(document))
+                return ensureDocumentAthenaDbFile(document).symbols;
+            let symbols = new Array();
+            let text = document.getText();
+            let curlyCount = 0;
+            let isString = false;
+            let openCurlyOffset = -1; // Current symbol beginning
+            let label = "";
+            let bodyStart = 0, bodyEnd = 0;
+            let innerSymbols = new Array();
+            for (var i = 0; i < text.length; i++) {
+                var c = text.charAt(i);
+                // Skip strings
+                if (c == '\"' && i != 0 && text.charAt(i - 1) != '\\') {
+                    isString = !isString;
+                    continue;
                 }
-                for (var i = 0; i < text.length; i++) {
-                    var c = text.charAt(i);
-                    // Skip strings
-                    if (c == '\"' && i != 0 && text.charAt(i - 1) != '\\') {
-                        isString = !isString;
-                        continue;
-                    }
-                    if (isString)
-                        continue;
-                    // Skip line comments
-                    if (c == '/' && i < text.length - 1 && text.charAt(i + 1) == '/') {
-                        while (text.charAt(i) != '\r' && text.charAt(i) != '\n' && i < text.length)
-                            i++;
-                        continue;
-                    }
-                    // Skip block comments
-                    if (c == '/' && i < text.length - 1 && text.charAt(i + 1) == '*') {
-                        while (text.charAt(i) != '*' && i < text.length - 1 && text.charAt(i + 1) != '/')
-                            i++;
-                        continue;
-                    }
-                    var type = -1;
-                    var line = document.fileName;
-                    if (c == '{') {
-                        if (curlyCount == 0)
-                            openCurlyOffset = i;
-                        curlyCount++;
-                    }
-                    else if (c == '}' && curlyCount > 0) {
-                        curlyCount--;
-                        if (curlyCount == 0 && openCurlyOffset != -1) {
-                            var beginningOfLine = getBeginningOfLinePosition(text, openCurlyOffset);
-                            line = text.substring(beginningOfLine, openCurlyOffset);
-                            if (line.indexOf("\tscript\t") != -1) {
-                                if (line.indexOf("function\tscript\t") != -1)
-                                    type = vscode.SymbolKind.Function;
-                                else
-                                    type = vscode.SymbolKind.Namespace;
-                                label = getSymbolLabel(line);
-                                bodyStart = beginningOfLine;
-                                bodyEnd = i;
-                                openCurlyOffset = -1;
-                            }
-                        }
-                    }
-                    else if (c == '\r' || c == '\n') {
-                        var beginningOfLine = getBeginningOfLinePosition(text, i);
-                        line = text.substring(beginningOfLine, i);
-                        if (line.indexOf("\tduplicate(") != -1) {
-                            type = vscode.SymbolKind.EnumMember;
+                if (isString)
+                    continue;
+                // Skip line comments
+                if (c == '/' && i < text.length - 1 && text.charAt(i + 1) == '/') {
+                    while (text.charAt(i) != '\r' && text.charAt(i) != '\n' && i < text.length)
+                        i++;
+                    continue;
+                }
+                // Skip block comments
+                if (c == '/' && i < text.length - 1 && text.charAt(i + 1) == '*') {
+                    while (text.charAt(i) != '*' && i < text.length - 1 && text.charAt(i + 1) != '/')
+                        i++;
+                    continue;
+                }
+                var type = -1;
+                var line = document.fileName;
+                if (c == '{') {
+                    if (curlyCount == 0)
+                        openCurlyOffset = i;
+                    curlyCount++;
+                }
+                else if (c == '}' && curlyCount > 0) {
+                    curlyCount--;
+                    if (curlyCount == 0 && openCurlyOffset != -1) {
+                        var beginningOfLine = getBeginningOfLinePosition(text, openCurlyOffset);
+                        line = text.substring(beginningOfLine, openCurlyOffset);
+                        if (line.indexOf("\tscript\t") != -1) {
+                            if (line.indexOf("function\tscript\t") != -1)
+                                type = vscode.SymbolKind.Function;
+                            else
+                                type = vscode.SymbolKind.Namespace;
                             label = getSymbolLabel(line);
+                            bodyStart = beginningOfLine;
+                            bodyEnd = i;
+                            openCurlyOffset = -1;
                         }
-                        else if (line.indexOf("\twarp\t") != -1) {
-                            type = vscode.SymbolKind.Event;
-                            label = getSymbolLabel(line);
-                        }
-                        else if (line.indexOf("\tmonster\t") != -1) {
-                            type = vscode.SymbolKind.Object;
-                            label = line;
-                        }
-                        else if (line.indexOf("\tmapflag\t") != -1) {
-                            type = vscode.SymbolKind.TypeParameter;
-                            label = line;
-                        }
-                        else if (line.indexOf("\tshop\t") != -1) {
-                            type = vscode.SymbolKind.Interface;
-                            label = getSymbolLabel(line);
-                        }
-                        else if (line.indexOf("\tcashshop\t") != -1) {
-                            type = vscode.SymbolKind.Interface;
-                            label = getSymbolLabel(line);
-                        }
-                        bodyStart = beginningOfLine;
-                        bodyEnd = i;
-                    }
-                    if (type != -1) {
-                        let position = new vscode.Range(document.positionAt(bodyStart), document.positionAt(bodyEnd));
-                        let symbol = new vscode.SymbolInformation(label, type, document.fileName, new vscode.Location(document.uri, position));
-                        symbols.push(symbol);
-                        type = -1;
                     }
                 }
-                resolve(symbols);
-            });
+                else if (c == '\r' || c == '\n') {
+                    let matchResult;
+                    let beginningOfLine = getBeginningOfLinePosition(text, i);
+                    line = text.substring(beginningOfLine, i);
+                    if (line.indexOf("\tduplicate(") != -1) {
+                        type = vscode.SymbolKind.EnumMember;
+                        label = getSymbolLabel(line);
+                    }
+                    else if (line.indexOf("\twarp\t") != -1) {
+                        type = vscode.SymbolKind.Event;
+                        label = getSymbolLabel(line);
+                    }
+                    else if (line.indexOf("\tmonster\t") != -1) {
+                        type = vscode.SymbolKind.Object;
+                        label = line;
+                    }
+                    else if (line.indexOf("\tmapflag\t") != -1) {
+                        type = vscode.SymbolKind.TypeParameter;
+                        label = line;
+                    }
+                    else if (line.indexOf("\tshop\t") != -1) {
+                        type = vscode.SymbolKind.Interface;
+                        label = getSymbolLabel(line);
+                    }
+                    else if (line.indexOf("\tcashshop\t") != -1) {
+                        type = vscode.SymbolKind.Interface;
+                        label = getSymbolLabel(line);
+                    }
+                    else if (matchResult = line.match(/On[^:]*:/)) {
+                        type = vscode.SymbolKind.Class;
+                        label = matchResult[0];
+                    }
+                    else if (matchResult = line.trim().match(/function\t([^\t]*)\t{/)) {
+                        if (matchResult.length >= 2) {
+                            type = vscode.SymbolKind.Method;
+                            label = matchResult[1];
+                        }
+                    }
+                    bodyStart = beginningOfLine;
+                    bodyEnd = i;
+                }
+                if (type != -1) {
+                    let position = new vscode.Range(document.positionAt(bodyStart), document.positionAt(bodyEnd));
+                    //let symbol = new vscode.SymbolInformation(label, type, document.fileName, new vscode.Location(document.uri, position));	// this one is only needed for workspace symbols, with file and stuff
+                    let symbol = new vscode.SymbolInformation(label, type, position);
+                    symbols.push(symbol);
+                    type = -1;
+                }
+            }
+            return symbols;
         }
     });
-    context.subscriptions.push(completionProvider, navProvider, hoverProvider, gotoDefinitionProvider, referenceProvider, copySearchRegexCmd, signatureHelpProvider);
+    let workspaceSymbolsProvider = vscode.languages.registerWorkspaceSymbolProvider({
+        provideWorkspaceSymbols(query, token) {
+            let ret = Array();
+            // let consumed = new Array<boolean>(query.length);
+            query = query.toLowerCase();
+            let databases = [itemDB, mobDB, skillDB];
+            let allSymbols = new Array();
+            try {
+                databases.forEach(db => {
+                    db.files.forEach(f => {
+                        allSymbols = allSymbols.concat(f.symbols);
+                        if (token.isCancellationRequested)
+                            throw new Error();
+                    });
+                });
+                allSymbols.forEach(s => {
+                    // Commented out: Documentation says that we need to provide a relaxed string filtering, but I like the substring comparison better, and it's faster as well.
+                    // Type 1: relaxed string comparison
+                    // consumed.fill(false);
+                    // let queryCharIdx;
+                    // let consumedNum = 0;
+                    // let name = s.name.toLowerCase();
+                    // for ( let nameCharIdx = 0; nameCharIdx < name.length; nameCharIdx++ ) {
+                    // 	for ( queryCharIdx = 0; queryCharIdx < query.length; queryCharIdx++ ) {
+                    // 		if ( query.charAt(queryCharIdx) == name.charAt(nameCharIdx) && !consumed[queryCharIdx] ) {
+                    // 			consumed[queryCharIdx] = true;
+                    // 			consumedNum++;
+                    // 			break;
+                    // 		}
+                    // 	}
+                    // 	if ( consumedNum == query.length )
+                    // 		break; // All query chars have been consumed, no need to continue checking.
+                    // }
+                    // if ( consumed.includes(false) )
+                    // 	return;
+                    // Type 2: substring comparison
+                    if (!s.name.toLowerCase().includes(query))
+                        return;
+                    ret.push(s);
+                    if (token.isCancellationRequested)
+                        throw new Error();
+                });
+            }
+            catch (Error) { // Cancelled
+                return new Array();
+            }
+            return ret;
+        }
+    });
+    context.subscriptions.push(completionProvider, navProvider, hoverProvider, gotoDefinitionProvider, referenceProvider, copySearchRegexCmd, signatureHelpProvider, workspaceSymbolsProvider);
     let timeout = undefined;
     const columnColors = [
         '#AA000011',
@@ -2420,14 +3169,15 @@ function activate(context) {
         let document = activeEditor.document;
         if (document.languageId != languageId)
             return;
-        if (!isDocumentAthenaDB(document))
+        let isAthenaDB = isDocumentAthenaDB(document);
+        if (!isAthenaDB)
             return;
         let enableHighlight = forceDbColumnHighlight.get(document.fileName);
         if (enableHighlight == null)
-            enableHighlight = isDocumentAthenaDB(document) && defaultAthenaDbColumnHighlighting;
+            enableHighlight = isAthenaDB && defaultAthenaDbColumnHighlighting;
         let enableHints = forceDbColumnHints.get(document.fileName);
         if (enableHints == null)
-            enableHints = isDocumentAthenaDB(document) && defaultAthenaDbColumnHints;
+            enableHints = isAthenaDB && defaultAthenaDbColumnHints;
         let colDecorationTypes = documentToDecorationTypes.get(document);
         if (forceUpdateDecorationTypes && colDecorationTypes != null) {
             for (let i = 0; i < colDecorationTypes.length; i++)
@@ -2503,14 +3253,31 @@ function activate(context) {
             }
         }
     }
+    vscode.window.onDidChangeTextEditorSelection(event => {
+        let selection = event.selections[0];
+        if (isDocumentAthenaDB(event.textEditor.document) && webviewPanel) {
+            let requireUpdateWebview = selection.start.line != webviewPanelLineNum;
+            if (!requireUpdateWebview) {
+                let dbFile = ensureDocumentAthenaDbFile(event.textEditor.document);
+                let newActiveParam = dbFile.getParamIdxAtPosition(selection.start);
+                if (newActiveParam != webviewPanelActiveParam)
+                    requireUpdateWebview = true;
+            }
+            if (requireUpdateWebview)
+                updateWebviewContent();
+        }
+    });
     vscode.workspace.onDidChangeTextDocument(event => {
         let document = event.document;
         let dbFile = isDocumentAthenaDB(document) ? ensureDocumentAthenaDbFile(document) : null;
         if (dbFile) {
             for (let i = 0; i < event.contentChanges.length; i++) {
                 let change = event.contentChanges[i];
-                for (let l = change.range.start.line; l <= change.range.end.line; l++)
+                for (let l = change.range.start.line; l <= change.range.end.line; l++) {
                     dbFile.updateLine(document, l);
+                    if (activeEditor && activeEditor.selection.start.line == change.range.start.line && webviewPanel)
+                        updateWebviewContent();
+                }
             }
         }
         if (activeEditor && event.document === activeEditor.document) {
@@ -2554,6 +3321,175 @@ function activate(context) {
     vscode.commands.registerCommand("extension.sortLuaKeyValTableInSelection", () => {
         sortLuaKeyValTableInSelection();
     });
+    vscode.commands.registerCommand("extension.toggleLinePreview", () => {
+        if (!webviewPanel) {
+            webviewPanel = vscode.window.createWebviewPanel("eapreview", "DB Entry Preview", vscode.ViewColumn.Two, {
+                enableScripts: true
+            });
+            updateWebviewContent();
+            webviewPanel.onDidDispose(() => {
+                webviewPanel = undefined;
+            }, null, context.subscriptions);
+            webviewPanel.webview.onDidReceiveMessage(message => {
+                switch (message.command) {
+                    case 'selectParameter':
+                        if (!isDocumentAthenaDB(webviewPanelEditor.document) || webviewPanelLineNum == undefined)
+                            return;
+                        let dbFile = ensureDocumentAthenaDbFile(webviewPanelEditor.document);
+                        if (webviewPanelLineNum >= dbFile.lines.length) {
+                            vscode.window.showErrorMessage("invalid line selected");
+                            return;
+                        }
+                        let dbLine = dbFile.lines[webviewPanelLineNum];
+                        let paramIndex = dbFile.parentDb.getParamIndex(message.text);
+                        if (paramIndex < 0 || paramIndex >= dbLine.paramRanges.length)
+                            return;
+                        let selection = new vscode.Selection(dbLine.paramRanges[paramIndex].start, dbLine.paramRanges[paramIndex].start);
+                        //vscode.workspace.openTextDocument(webviewPanelEditor.document.fileName);
+                        vscode.window.showTextDocument(webviewPanelEditor.document, { viewColumn: vscode.ViewColumn.One, selection: selection });
+                }
+            }, undefined, context.subscriptions);
+        }
+        else {
+            webviewPanel.dispose();
+            webviewPanel = undefined;
+        }
+    });
+    vscode.commands.registerCommand("extension.copyEmbedHtml", () => {
+        var _a;
+        let activeEditor = vscode.window.activeTextEditor;
+        if (!activeEditor)
+            return;
+        let wordRange = activeEditor.document.getWordRangeAtPosition(activeEditor.selection.start, wordPattern);
+        let word = activeEditor.document.getText(wordRange);
+        let itemDBLine = itemDB.nameToDbLine.get(word);
+        let mobDBLine = mobDB.nameToDbLine.get(word);
+        let skillDBLine = skillDB.nameToDbLine.get(word);
+        let dbLine = itemDBLine || mobDBLine || skillDBLine;
+        if (!dbLine) {
+            vscode.window.showErrorMessage("Failed to find item/mob/skill: '" + word + "'.");
+            return;
+        }
+        if (itemDBLine) {
+            let itemId = itemDBLine.getIntParamByIndex(itemDbParamIndex.ID);
+            let itemType = itemDBLine.getIntParamByIndex(itemDbParamIndex.Type);
+            //let itemSection : string;
+            let URL;
+            if (!itemId)
+                return;
+            if (itemType == IT.WEAPON || itemType == IT.ARMOR || itemType == IT.AMMO)
+                URL = getConfValOrThrow("databaseURL.equipItem");
+            else if (itemType == IT.CARD)
+                URL = getConfValOrThrow("databaseURL.cardItem");
+            else
+                URL = getConfValOrThrow("databaseURL.normalItem");
+            URL = URL.replace("ITEMID", itemId.toString());
+            if (!itemImageURL) {
+                vscode.window.showErrorMessage("Item image URL setting is not set");
+                return;
+            }
+            let imageURL = itemImageURL.replace("ITEMID", itemId.toString());
+            let itemVisibleName = itemDBLine.getParamByIndex(itemDbParamIndex.visibleName());
+            vscode.env.clipboard.writeText("<a href=\"" + URL + "\"><img src=\"" + imageURL + "\" height=\"24\" style=\"vertical-align:middle; padding-right: 10px\">" + itemVisibleName + "</a>");
+            vscode.window.showInformationMessage("HTML code to embed '" + itemVisibleName + "' has been copied to the clipboard.");
+        }
+        else if (mobDBLine) {
+            let mobId = mobDBLine.getIntParamByIndex(mobDbParamIndex.ID);
+            if (!mobId)
+                return;
+            let URL = getConfValOrThrow("databaseURL.mob");
+            URL = URL.replace("MOBID", mobId.toString());
+            if (!mobImageURL) {
+                vscode.window.showErrorMessage("Mob image URL setting is not set");
+                return;
+            }
+            let imageURL = mobImageURL.replace("MOBID", mobId.toString());
+            let mobVisibleName = mobDBLine.getParamByIndex(mobDbParamIndex.visibleName());
+            vscode.env.clipboard.writeText("<a href=\"" + URL + "\"><img src=\"" + imageURL + "\" height=\"24\" style=\"vertical-align:middle; padding-right: 10px\">" + mobVisibleName + "</a>");
+            vscode.window.showInformationMessage("HTML code to embed '" + mobVisibleName + "' has been copied to the clipboard.");
+        }
+        else if (skillDBLine) {
+            let skillId = skillDBLine.getIntParamByIndex(skillDbParamIndex.id);
+            let skillTechNameLower = (_a = skillDBLine.getParamByIndex(skillDbParamIndex.techName)) === null || _a === void 0 ? void 0 : _a.toLowerCase();
+            let skillVisibleName = skillDBLine.getParamByIndex(skillDbParamIndex.defaultVisibleName());
+            if (!skillId || !skillTechNameLower) // skill_id=0 is valid
+                return;
+            let URL = getConfValOrThrow("databaseURL.skill");
+            URL = URL.replace("SKILLID", skillId.toString()).replace("SKILLNAME", skillTechNameLower);
+            if (!skillImageURL) {
+                vscode.window.showErrorMessage("Skill image URL setting is not set");
+                return;
+            }
+            let imageURL = skillImageURL.replace("SKILLID", skillId.toString()).replace("SKILLNAME", skillTechNameLower);
+            vscode.env.clipboard.writeText("<a href=\"" + URL + "\"><img src=\"" + imageURL + "\" height=\"24\" style=\"vertical-align:middle; padding-right: 10px\">" + skillVisibleName + "</a>");
+            vscode.window.showInformationMessage("HTML code to embed '" + skillVisibleName + "' has been copied to the clipboard.");
+        }
+    });
+    vscode.commands.registerCommand("extension.findItemDesc", () => {
+        let activeEditor = vscode.window.activeTextEditor;
+        if (!activeEditor)
+            return;
+        let wordRange = activeEditor.document.getWordRangeAtPosition(activeEditor.selection.start, wordPattern);
+        let word = activeEditor.document.getText(wordRange);
+        //let skillDBLine = skillDB.nameToDbLine.get(word);
+        let itemId;
+        if (isFullyNumericString(word))
+            itemId = parseInt(word);
+        else {
+            let itemDBLine = itemDB.nameToDbLine.get(word);
+            if (!itemDBLine) {
+                vscode.window.showErrorMessage("item" + word + " not found in db");
+                return;
+            }
+            itemId = itemDBLine.getIntParamByIndex(itemDbParamIndex.ID);
+            if (!itemId) {
+                vscode.window.showErrorMessage("item" + word + " has no ID");
+                return;
+            }
+        }
+        let itemInfoFileName = getConfValOrThrow("itemInfoPath", "iteminfo path");
+        if (!fs.existsSync(itemInfoFileName) || !fs.statSync(itemInfoFileName).isFile()) {
+            vscode.window.showErrorMessage(itemInfoFileName + " not found or is not a file");
+            return;
+        }
+        let fileContent = fs.readFileSync(itemInfoFileName);
+        //let fileContentStr = iconv.decode(fileContent, codepage);
+        let ofs = fileContent.indexOf("[" + itemId + "]");
+        if (ofs == -1) {
+            vscode.window.showErrorMessage("item with ID=" + itemId + " not found in file " + itemInfoFileName);
+            return;
+        }
+        let ret = vscode.workspace.openTextDocument(itemInfoFileName);
+        ret.then(onItemInfoOpenSuccess, onItemInfoOpenFailed);
+        function onItemInfoOpenSuccess(document) {
+            let pos = document.positionAt(ofs);
+            vscode.window.showTextDocument(document, { selection: new vscode.Selection(pos, pos) });
+        }
+        function onItemInfoOpenFailed(reason) {
+            vscode.window.showErrorMessage("Failed to open itemInfo file " + itemInfoFileName + " in VSCODE");
+        }
+    });
+    function updateWebviewContent() {
+        if (!webviewPanel)
+            return;
+        let editor = vscode.window.activeTextEditor;
+        if (!editor)
+            return;
+        let document = editor.document;
+        let selection = editor.selection;
+        if (!selection || !document)
+            return;
+        if (!isDocumentAthenaDB(document))
+            return;
+        let dbFile = ensureDocumentAthenaDbFile(document);
+        let dbLine = selection.start.line <= dbFile.lines.length ? dbFile.lines[selection.start.line] : null;
+        if (!dbLine)
+            return;
+        webviewPanelEditor = editor;
+        webviewPanelLineNum = editor.selection.start.line;
+        webviewPanelActiveParam = dbLine.getParamIdxAtPosition(editor.selection.start);
+        webviewPanel.webview.html = dbFile.parentDb.explainLine(dbLine, true, selection.start);
+    }
     function syncWithAthena() {
         function replaceBetween(src, after, before, replacement) {
             let startIndex = src.indexOf(after);
@@ -2606,7 +3542,7 @@ function activate(context) {
             completionsTxt += "1\t" + def[0] + "\t" + def[1] + "\n";
         });
         // Write completions.txt functions
-        let scriptCppPath = getConfValOrThrow("scriptCppPath", "script.cpp path");
+        let scriptCppPath = athenaDir + "/src/map/script.cpp";
         let fileContentStr = fs.readFileSync(scriptCppPath).toString();
         let startScriptFunctionDefIndex = fileContentStr.indexOf("struct script_function buildin_func[] = {");
         let funcNames = "";
@@ -2646,6 +3582,8 @@ function activate(context) {
                 completionsTxt += "\n";
             });
         }
+        if (!fs.existsSync(completionsTxtDir))
+            fs.mkdirSync(completionsTxtDir);
         fs.writeFileSync(completionsTxtFn, completionsTxt);
         // Write constant names to syntax file, for syntax highlighting
         let constNames = "";
@@ -2679,7 +3617,10 @@ function activate(context) {
         syncWithAthena();
     });
     let activation_time = new Date().getTime() - tstart;
-    console.log("Initialization fully complete in " + activation_time + " ms (item_db: " + item_db_time + " ms, mob_db: " + mob_db_time + " ms)");
+    getAutoLoadedDatabases().forEach(db => {
+        console.log(db.constructor.name + ": " + db.constructionTime + " ms");
+    });
+    console.log("Initialization fully complete in " + activation_time + " ms.");
 }
 exports.activate = activate;
 function getKeyValueLineId(document, line) {

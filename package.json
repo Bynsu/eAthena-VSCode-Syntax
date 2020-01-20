@@ -5,7 +5,7 @@
 	"description": "",
 	"version": "0.0.1",
 	"engines": {
-		"vscode": "^1.35.0"
+		"vscode": "^1.41.0"
 	},
 	"categories": [
 		"Other"
@@ -28,15 +28,35 @@
 				"command": "extension.toggleAthenaDbColumnHints",
 				"title": "eAthena: Toggle DB column hints for this file"
 			},
-			{ 
+			{
 				"command": "extension.sortLuaKeyValTableInSelection",
 				"title": "eAthena: Sort LUA table by value"
 			},
 			{
 				"command": "extension.syncWithAthena",
 				"title": "eAthena: Sync script functions and syntax highlighting"
+			},
+			{
+				"command": "extension.toggleLinePreview",
+				"title": "eAthena: Toggle current line preview window"
+			},
+			{
+				"command": "extension.copyEmbedHtml",
+				"title": "eAthena: Copy Embed HTML"
+			},
+			{
+				"command": "extension.findItemDesc",
+				"title": "eAthena: Find item description"
 			}
 		],
+		"menus": {
+			"editor/context": [
+				{
+					"command": "extension.copyEmbedHtml",
+					"group": "YourGroup@1"
+	      		}
+			]
+		},
 		"languages": [
 			{
 				"id": "eAthena",
@@ -65,56 +85,25 @@
 					"default": "win1252",
 					"description": "Codepage for multibyte files"
 				},
-				"eathena.athenaNpcDirectory": {
+				"eathena.isRAthena": {
+					"type": "boolean",
+					"default": true,
+					"description": "true for rAthena, false for eAthena"
+				},
+				"eathena.athenaDirectory": {
 					"type": "string",
 					"default": null,
-					"description": "Path to Athena NPC directory"
+					"description": "Path to Athena directory"
 				},
-				"eathena.athenaDbDirectory": {
-					"type": "string",
-					"default": null,
-					"description": "Path to Athena DB directory (or db/re for emulators with subdirs in db dir)."
-				},
-				"eathena.mobDbRelativePath": {
-					"type": "string",
-					"default": "mob_db.txt",
-					"description": "Path to mob_db.txt, relative to DB directory. Split with ; semicolon if there's more than one."
-				},
-				"eathena.itemDbRelativePath": {
-					"type": "string",
-					"default": "item_db.txt",
-					"description": "Path to item_db.txt, relative to DB directory. Split with ; semicolon if there's more than one."
-				},
-				"eathena.mobSkillDbRelativePath": {
-					"type": "string",
-					"default": "mob_skill_db.txt",
-					"description": "Path to mob_skill_db.txt, relative to DB directory. Split with ; semicolon if there's more than one."
-				},
-				"eathena.constDbRelativePath": {
-					"type": "string",
-					"default": "../const.txt",
-					"description": "Path to const.txt, relative to DB directory."
-				},
-				"eathena.scriptCppPath": {
-					"type": "string",
-					"default": null,
-					"description": "Absolute path to script.cpp"
-				},
-				"eathena.scriptConstantsHppPath": {
-					"type": "string",
-					"default": null,
-					"description": "Absolute path to script_constants.hpp"
-				},
-
 				"eathena.clientQuestid2displayPath": {
 					"type": "string",
 					"default": null,
-					"description": "Path to client questid2display.txt, for displaying quest information"
+					"description": "File system path to client questid2display.txt, for displaying quest information"
 				},
 				"eathena.itemBonusTxtPath": {
 					"type": "string",
 					"default": null,
-					"description": "Path to Athena doc/item_bonus.txt, for item bonus explanations"
+					"description": "File system path to Athena doc/item_bonus.txt, for item bonus explanations"
 				},
 				"eathena.defaultAthenaDbColumnHighlighting": {
 					"type": "boolean",
@@ -126,37 +115,100 @@
 					"default": false,
 					"description": "Show Athena DB column hints"
 				},
-
 				"eathena.itemImageURL": {
 					"type": "string",
 					"default": "https://static.divine-pride.net/images/items/item/ITEMID.png",
-					"description": "Base URL path of the item images, required for item previews. Plugin will replace ITEMID with the actual ID of the item."
+					"description": "URL format for item images, required for item previews. Plugin will replace ITEMID with the actual ID of the item."
 				},
 				"eathena.mobImageURL": {
 					"type": "string",
 					"default": "https://static.divine-pride.net/images/mobs/png/MOBID.png",
-					"description": "Base URL path of the mob images, required for mob previews. Plugin will replace MOBID with the actual ID of the mob."
+					"description": "URL format for monster images, required for mob previews. Plugin will replace MOBID with the actual ID of the mob."
 				},
 				"eathena.skillImageURL": {
 					"type": "string",
 					"default": "https://static.divine-pride.net/images/skill/SKILLID.png",
-					"description": "Base URL path of the skill images, required for skill previews. Plugin will replace SKID with the actuall ID of the skill or SKILLNAME with the enum name of the skill."
+					"description": "URL format for skill images, required for skill previews. Plugin will replace SKILLID with the actuall ID of the skill or SKILLNAME with the enum name of the skill."
+				},
+
+				"eathena.databaseURL.normalItem": {
+					"type": "string",
+					"default": "https://www.divine-pride.net/database/item/ITEMID",
+					"description": "URL format for healing/etc item database links, required to copy item HTML embed code. Plugin will replace ITEMID with the actual ID of the item."
+				},
+				"eathena.databaseURL.equipItem": {
+					"type": "string",
+					"default": "https://www.divine-pride.net/database/item/ITEMID",
+					"description": "URL format for equipment item database links, required to copy item HTML embed code. Plugin will replace ITEMID with the actual ID of the item."
+				},
+				"eathena.databaseURL.cardItem": {
+					"type": "string",
+					"default": "https://www.divine-pride.net/database/item/ITEMID",
+					"description": "URL format for card item database links, required to copy item HTML embed code. Plugin will replace ITEMID with the actual ID of the item."
+				},
+				"eathena.databaseURL.mob": {
+					"type": "string",
+					"default": "https://www.divine-pride.net/database/monster/MOBID",
+					"description": "URL format for monster database links, required to copy monster HTML embed code. Plugin will replace MOBID with the actual ID of the mob."
+				},
+				"eathena.databaseURL.skill": {
+					"type": "string",
+					"default": "https://www.divine-pride.net/database/skill/SKILLID",
+					"description": "URL format for skill database links, required to copy skill HTML embed code. Plugin will replace SKILLID with the actuall ID of the skill or SKILLNAME with the enum name of the skill."
+				},
+
+				"eathena.itemInfoPath": {
+					"type": "string",
+					"default": "",
+					"description": "(optional) Path to your non-compiled itemInfo file, for item descriptions lookup."
 				}
 			}
 		},
-
 		"snippets": [
 			{
 				"language": "eAthena",
 				"path": "./snippets/mes.code-snippets"
+			},
+			{
+				"language": "lua",
+				"path": "./snippets/mes.code-snippets"
 			}
 		],
-		
 		"keybindings": [
+			{
+				"key": "alt+a",
+				"command": "editor.action.insertSnippet",
+				"args": {
+					"name": "mes-npc"
+				}
+			},
+			{
+				"key": "alt+s",
+				"command": "editor.action.insertSnippet",
+				"args": {
+					"name": "sstr"
+				}
+			},
+			{
+				"key": "alt+d",
+				"command": "editor.action.insertSnippet",
+				"args": {
+					"name": "lstr"
+				}
+			},
+			{
+				"key": "alt+i",
+				"command": "editor.action.insertSnippet",
+				"args": {
+					"name": "F_ItemLink"
+				}
+			},
 			{
 				"key": "alt+o",
 				"command": "editor.action.insertSnippet",
-				"args": { "name": "ScriptColorTag" }
+				"args": {
+					"name": "ScriptColorTag"
+				}
 			}
 		]
 	},
@@ -168,12 +220,12 @@
 		"test": "npm run compile && node ./node_modules/vscode/bin/test"
 	},
 	"devDependencies": {
-		"typescript": "^3.3.1",
-		"vscode": "^1.1.28",
-		"tslint": "^5.12.1",
+		"@types/mocha": "^2.2.42",
+		"@types/node": "^10.17.6",
 		"iconv-lite-ts": "0.0.1",
-		"@types/node": "^10.12.21",
-		"@types/mocha": "^2.2.42"
+		"tslint": "^5.20.1",
+		"typescript": "^3.7.2",
+		"vscode": "^1.1.36"
 	},
 	"dependencies": {
 		"iconv-lite": "^0.5.0",
